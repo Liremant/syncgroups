@@ -85,7 +85,7 @@ public final class SyncEngine {
                     LOGGER.info("Backed up existing group data of {} to {}", spec.modId, backup);
                 }
                 for (Path entry : local) {
-                    DirOps.copyTree(entry, sync.resolve(entry.getFileName().toString()));
+                    copyLocalIntoSync(entry, sync, root);
                 }
                 // Local copies are deliberately kept: they stay the working copy on join.
             }
@@ -125,7 +125,15 @@ public final class SyncEngine {
                     } else {
                         Files.createDirectories(local.getParent());
                     }
-                    DirOps.copyTree(sync, local);
+                    // Dir mode syncs the CONTENT of the per-server container, not the
+                    // container itself: Xaero keys the container by server address, so
+                    // dumping another server's whole container inside would create an
+                    // unreadable nested node (verified in production).
+                    try (Stream<Path> s = Files.list(sync)) {
+                        for (Path child : (Iterable<Path>) s::iterator) {
+                            DirOps.copyTree(child, local.resolve(child.getFileName().toString()));
+                        }
+                    }
                 }
             }
         }
@@ -158,7 +166,7 @@ public final class SyncEngine {
                         allOk = false;
                         continue;
                     }
-                    DirOps.copyTree(entry, syncDir(group.id, spec.modId, root).resolve(entry.getFileName().toString()));
+                    copyLocalIntoSync(entry, syncDir(group.id, spec.modId, root), root);
                 }
             }
         }
@@ -213,7 +221,7 @@ public final class SyncEngine {
                     continue;
                 }
                 try {
-                    DirOps.copyTree(entry, syncDir(group.id, modId, root).resolve(entry.getFileName().toString()));
+                    copyLocalIntoSync(entry, syncDir(group.id, modId, root), root);
                     LOGGER.info("Recovery push of {} for {} completed", modId, serverKey);
                 } catch (IOException e) {
                     LOGGER.error("Recovery push failed for {} ({}), marker kept", modId, serverKey, e);
@@ -227,7 +235,6 @@ public final class SyncEngine {
     }
 
     // -------------------------------------------------------------- dissolve
-
     /** Spec §6: never delete group data silently — move to _dissolved. */
     public void dissolve(Group group, GroupsStore store) throws IOException {
         Path stamp = rootDir.resolve("_dissolved").resolve(group.id + "_" + Instant.now().getEpochSecond());
@@ -251,6 +258,24 @@ public final class SyncEngine {
     }
 
     // -------------------------------------------------------------- helpers
+
+    /**
+     * Copies one resolved local entry into its group sync folder.
+     * Dir mode stores the CONTENT of the per-server container (the container
+     * itself is address-keyed — nesting it elsewhere is unreadable to the mod);
+     * prefix mode stores the entry itself under its own name.
+     */
+    private void copyLocalIntoSync(Path entry, Path sync, ModSyncSpec.Root root) throws IOException {
+        if ("prefix".equals(root.mode)) {
+            DirOps.copyTree(entry, sync.resolve(entry.getFileName().toString()));
+            return;
+        }
+        try (Stream<Path> s = Files.list(entry)) {
+            for (Path child : (Iterable<Path>) s::iterator) {
+                DirOps.copyTree(child, sync.resolve(child.getFileName().toString()));
+            }
+        }
+    }
 
     public List<ModSyncSpec> activeSpecs() {
         List<ModSyncSpec> out = new ArrayList<>();
@@ -301,8 +326,7 @@ public final class SyncEngine {
         }
     }
 
-    private static Map<String, String> vars(String serverKey, String serverName) {
-        Map<String, String> vars = new LinkedHashMap<>();
+    private static Map<String, String> vars(String serverKey, String serverName) {        Map<String, String> vars = new LinkedHashMap<>();
         vars.put("server", serverKey);
         int colon = serverKey.lastIndexOf(':');
         if (colon > 0) {

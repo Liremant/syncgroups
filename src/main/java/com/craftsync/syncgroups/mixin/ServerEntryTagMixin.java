@@ -32,12 +32,15 @@ public class ServerEntryTagMixin {
         if (group == null) {
             return;
         }
-        // Entry geometry comes from the base list entry; the mixin instance is one.
+        // Entry geometry: vanilla draws the name line at contentY+1, starting at
+        // contentX+35 (icon 32 + 3 padding); the player counter sits at the right
+        // edge (contentRight-10, contentY+10) — so the tag goes right after the
+        // name on the first line, never touching the counter.
         ServerSelectionList.Entry entry = (ServerSelectionList.Entry) (Object) this;
         var font = Minecraft.getInstance().font;
         int textWidth = font.width(group.tag);
-        int x = entry.getContentX() + entry.getContentWidth() - textWidth - 20;
-        int y = entry.getContentY() + 2;
+        int x = entry.getContentX() + 35 + font.width(serverData.name) + 6;
+        int y = entry.getContentY() + 1;
         g.fill(x - 3, y - 2, x + textWidth + 3, y + 10, 0x90101010);
         g.text(font, group.tag, x, y, group.colorInt());
     }
