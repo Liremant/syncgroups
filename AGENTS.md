@@ -1,5 +1,38 @@
 # AGENTS.md — Sync Groups (Fabric client mod, Minecraft 26.2)
 
+## Project overview
+
+Client-only Fabric mod that lets a player group several multiplayer servers
+into a "sync group" so per-server client-mod data (waypoints, maps, chunk/LOD
+caches) is shared across the group as if it were one server (full spec: the
+"Sync Groups" ТЗ, Sept 2026).
+
+- Package root: `com.craftsync.syncgroups`.
+- `core/` — pure-Java disk logic (no MC classes): `SyncEngine` (pull/push/
+  backup/recovery), `GroupsStore` + `Group` (groups.json), `ServerKey`,
+  `SessionManager`, `IntegrityChecker`, `StorageCloseWaiter`, `DirOps`.
+- `integration/` — supported-mod table (`ModSpecs` defaults, `ModSyncSpec.Root`
+  dir/prefix modes) and the user-editable `PathsConfig` (paths.json).
+- `ui/` — screens (create/manage group, server picker) on the 26.2
+  `extractRenderState` pipeline.
+- `mixin/` — `JoinMultiplayerScreenMixin` (button) and `ServerEntryTagMixin`
+  (group tag on server entries).
+- Resources: `fabric.mod.json`, `syncgroups.mixins.json`, `assets/syncgroups/lang/`.
+- On-disk data (game dir): `syncgroups/groups.json` (metadata, hex colors),
+  `syncgroups/<gid>/<modid>/<rootSyncName>/` (shared copy), `syncgroups/<gid>/_backups/`,
+  `syncgroups/_dissolved/`, plus `syncgroups/paths.json` (path overrides,
+  regenerated on first run — do not hardcode paths in code).
+
+## Repo rules
+
+- Single local branch, no remote configured. Do not add remotes, push, or
+  create tags without an explicit user request.
+- Version lives in `gradle.properties` (`mod_version`); bump it when behavior
+  changes in a user-visible way.
+- The spec (ТЗ) is the source of truth for behavior; deviations discovered by
+  research (e.g. Voxy unsupported by default, DH keyed by server name) are
+  recorded below and in code comments — update both together.
+
 ## Workflow rules
 
 - **Maintain git history.** Commit after every meaningful unit of work (feature,
