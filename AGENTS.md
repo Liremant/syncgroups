@@ -67,6 +67,13 @@ caches) is shared across the group as if it were one server (full spec: the
   background via `extractBackground(...)`.
 - Saved servers render through `ServerSelectionList$OnlineServerEntry`
   (`NetworkServerEntry` is LAN-only in 26.2). `ServerData` fields: `ip`, `name`.
+- **Do not @Shadow members inherited from a superclass** (e.g. `Screen
+  .addRenderableWidget` when targeting a Screen subclass): descriptor matching
+  is exact, and shadow resolution of inherited *methods* fails at runtime under
+  Knot even when the descriptor matches. Instead, make the mixin class extend
+  the declaring superclass (e.g. `abstract class XMixin extends Screen`) and
+  call the method normally. Inherited shadows of *fields* and members declared
+  directly in the target class are fine.
 - **Before using any MC API, verify it against the real mapped jar**:
   `~/.gradle/caches/fabric-loom/26.2/minecraft-merged.jar` via `javap`.
   Compile success proves nothing for mixin targets (string-based).
