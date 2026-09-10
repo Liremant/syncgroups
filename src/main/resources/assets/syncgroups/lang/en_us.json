@@ -3,9 +3,11 @@
   "syncgroups.manage.title": "Sync Groups",
   "syncgroups.manage.new": "New group",
   "syncgroups.manage.remove": "Remove",
-  "syncgroups.pick.title": "Select servers to group",
+  "syncgroups.pick.title": "Create Sync Group",
+  "syncgroups.pick.step": "Step 1 of 2 — select servers to group (2 or more)",
   "syncgroups.pick.next": "Next",
   "syncgroups.create.title": "Create Sync Group",
+  "syncgroups.create.step": "Step 2 of 2 — tag and color",
   "syncgroups.create.tag": "Tag (max 16 chars)",
   "syncgroups.create.confirm": "Create"
 }

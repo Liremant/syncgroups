@@ -52,7 +52,7 @@ public class SyncGroupsScreen extends Screen {
                     .bounds(x0 + 300 - 90, y, 90, 18)
                     .build());
         }
-        addRenderableWidget(Button.builder(Component.translatable("syncgroups.manage.new"), b -> minecraft.setScreenAndShow(new ServerPickScreen(this)))
+        addRenderableWidget(Button.builder(Component.translatable("syncgroups.manage.new"), b -> minecraft.setScreenAndShow(new ServerPickScreen(this, parent)))
                 .bounds(width / 2 - 100, height - 28, 200, 20)
                 .build());
         addRenderableWidget(Button.builder(Component.translatable("gui.done"), b -> onClose())

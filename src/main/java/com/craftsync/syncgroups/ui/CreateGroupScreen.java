@@ -8,6 +8,7 @@ import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.multiplayer.ServerData;
+import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.network.chat.Component;
 
 import java.io.IOException;
@@ -17,56 +18,51 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Spec §5.3: tag (max 16 chars) + 16-color palette, then create.
- * Runs the engine's createGroup (§4.1 + §4.2) for every selected server.
+ * Spec §5.3, step 2 of the wizard: tag (max 16 chars) + full color picker.
+ * After a successful create the player is sent back to the server list
+ * (doneScreen), not to the management screen.
  */
 public class CreateGroupScreen extends Screen {
 
-    /** The 16 vanilla chat colors, in ChatFormatting order. */
-    private static final int[] PALETTE = {
-            0x000000, 0x0000AA, 0x00AA00, 0x00AAAA,
-            0xAA0000, 0xAA00AA, 0xFFAA00, 0xAAAAAA,
-            0x555555, 0x5555FF, 0x55FF55, 0x55FFFF,
-            0xFF5555, 0xFF55FF, 0xFFFF55, 0xFFFFFF,
-    };
+    private static final int PICKER_W = 220;
+    private static final int PICKER_H = 140;
 
-    private static final int SWATCH = 22;
-    private static final int PER_ROW = 8;
-
-    private final Screen parent;
+    private final Screen parent;     // cancel goes here (the wizard's previous step)
+    private final Screen doneScreen; // successful create goes here (the server list)
     private final List<ServerData> servers;
     private EditBox tagBox;
-    private int selectedColor = 0x55FF55;
+    private ColorPicker picker;
 
-    public CreateGroupScreen(Screen parent, List<ServerData> servers) {
+    public CreateGroupScreen(Screen parent, Screen doneScreen, List<ServerData> servers) {
         super(Component.translatable("syncgroups.create.title"));
         this.parent = parent;
+        this.doneScreen = doneScreen;
         this.servers = servers;
     }
 
     @Override
     protected void init() {
-        tagBox = new EditBox(font, width / 2 - 100, 40, 200, 20, Component.translatable("syncgroups.create.tag"));
+        int x0 = width / 2 - 170;
+        picker = new ColorPicker(x0, 50, PICKER_W, PICKER_H);
+
+        int rx = x0 + PICKER_W + 50;
+
+        tagBox = new EditBox(font, rx, 70, 130, 20, Component.translatable("syncgroups.create.tag"));
         tagBox.setMaxLength(16);
         addRenderableWidget(tagBox);
 
-        int startX = width / 2 - (PER_ROW * (SWATCH + 4)) / 2 + 2;
-        for (int i = 0; i < PALETTE.length; i++) {
-            int idx = i;
-            addRenderableWidget(Button.builder(Component.literal(" "), b -> selectedColor = PALETTE[idx])
-                    .bounds(startX + (i % PER_ROW) * (SWATCH + 4), 80 + (i / PER_ROW) * (SWATCH + 4), SWATCH, SWATCH)
-                    .build());
-        }
-
         Button create = Button.builder(Component.translatable("syncgroups.create.confirm"), b -> onCreate())
-                .bounds(width / 2 - 100, height - 28, 200, 20)
+                .bounds(rx, 110, 130, 20)
                 .build();
         create.active = false;
         tagBox.setResponder(s -> create.active = !s.isBlank());
         addRenderableWidget(create);
         addRenderableWidget(Button.builder(Component.translatable("gui.cancel"), b -> onClose())
-                .bounds(width / 2 - 100, height - 52, 200, 20)
+                .bounds(rx, 136, 130, 20)
                 .build());
+    }
+
+    private void g_placeholder() {
     }
 
     private void onCreate() {
@@ -82,27 +78,46 @@ public class CreateGroupScreen extends Screen {
                 keys.add(key);
                 names.put(key, server.name);
             }
-            Group group = SyncGroupsMod.engine().createGroup(tag, selectedColor, keys, names, SyncGroupsMod.store());
+            Group group = SyncGroupsMod.engine().createGroup(tag, picker.colorInt(), keys, names, SyncGroupsMod.store());
             SyncGroupsMod.LOGGER.info("Created sync group '{}' ({}) for {} server(s)", tag, group.id, keys.size());
         } catch (IOException | IllegalStateException e) {
             SyncGroupsMod.LOGGER.error("Failed to create group", e);
         }
-        onClose();
+        // Spec: after creating a group, return to the multiplayer server list.
+        minecraft.setScreenAndShow(doneScreen);
     }
 
     @Override
     public void extractRenderState(GuiGraphicsExtractor g, int mouseX, int mouseY, float partialTick) {
         super.extractRenderState(g, mouseX, mouseY, partialTick);
-        g.centeredText(font, title, width / 2, 16, 0xFFFFFF);
-        // Selection ring around the active swatch.
-        int startX = width / 2 - (PER_ROW * (SWATCH + 4)) / 2 + 2;
-        for (int i = 0; i < PALETTE.length; i++) {
-            if (PALETTE[i] == selectedColor) {
-                int x = startX + (i % PER_ROW) * (SWATCH + 4);
-                int y = 80 + (i / PER_ROW) * (SWATCH + 4);
-                g.outline(x - 2, y - 2, SWATCH + 4, SWATCH + 4, 0xFFFFFFFF);
-            }
+        g.centeredText(font, title, width / 2, 12, 0xFFFFFF);
+        g.centeredText(font, Component.translatable("syncgroups.create.step"), width / 2, 26, 0x909090);
+        int x0 = width / 2 - 170;
+        int rx = x0 + PICKER_W + 50;
+        g.text(font, Component.translatable("syncgroups.create.tag"), rx, 60, 0xA0A0A0);
+        picker.draw(g, font);
+    }
+
+    @Override
+    public boolean mouseClicked(MouseButtonEvent event, boolean doubled) {
+        if (picker.mouseClicked(event)) {
+            return true;
         }
+        return super.mouseClicked(event, doubled);
+    }
+
+    @Override
+    public boolean mouseDragged(MouseButtonEvent event, double dragX, double dragY) {
+        if (picker.mouseDragged(event)) {
+            return true;
+        }
+        return super.mouseDragged(event, dragX, dragY);
+    }
+
+    @Override
+    public boolean mouseReleased(MouseButtonEvent event) {
+        picker.mouseReleased(event);
+        return super.mouseReleased(event);
     }
 
     @Override

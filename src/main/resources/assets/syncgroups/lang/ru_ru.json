@@ -1,0 +1,13 @@
+{
+  "syncgroups.title": "Sync Groups",
+  "syncgroups.manage.title": "Sync Groups",
+  "syncgroups.manage.new": "Новая группа",
+  "syncgroups.manage.remove": "Убрать",
+  "syncgroups.pick.title": "Создание Sync Group",
+  "syncgroups.pick.step": "Шаг 1 из 2 — отметьте серверы (два и больше)",
+  "syncgroups.pick.next": "Далее",
+  "syncgroups.create.title": "Создание Sync Group",
+  "syncgroups.create.step": "Шаг 2 из 2 — название и цвет",
+  "syncgroups.create.tag": "Название (макс. 16 символов)",
+  "syncgroups.create.confirm": "Создать"
+}

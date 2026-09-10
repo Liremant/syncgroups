@@ -22,13 +22,15 @@ public class ServerPickScreen extends Screen {
     private static final int VISIBLE_ROWS = 6;
 
     private final Screen parent;
+    private final Screen doneScreen; // where a successful create lands (the server list)
     private final ServerList servers;
     private final List<Checkbox> checkboxes = new ArrayList<>();
     private int scroll;
 
-    public ServerPickScreen(Screen parent) {
+    public ServerPickScreen(Screen parent, Screen doneScreen) {
         super(Component.translatable("syncgroups.pick.title"));
         this.parent = parent;
+        this.doneScreen = doneScreen;
         this.servers = new ServerList(minecraft);
         this.servers.load();
     }
@@ -65,13 +67,14 @@ public class ServerPickScreen extends Screen {
         if (selected.size() < 2) {
             return;
         }
-        minecraft.setScreenAndShow(new CreateGroupScreen(this, selected));
+        minecraft.setScreenAndShow(new CreateGroupScreen(this, doneScreen, selected));
     }
 
     @Override
     public void extractRenderState(GuiGraphicsExtractor g, int mouseX, int mouseY, float partialTick) {
         super.extractRenderState(g, mouseX, mouseY, partialTick);
-        g.centeredText(font, title, width / 2, 16, 0xFFFFFF);
+        g.centeredText(font, title, width / 2, 12, 0xFFFFFF);
+        g.centeredText(font, Component.translatable("syncgroups.pick.step"), width / 2, 26, 0x909090);
     }
 
     @Override
