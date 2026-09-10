@@ -86,6 +86,10 @@ caches) is shared across the group as if it were one server (full spec: the
 - Xaero (≥ Minimap 25.3 / World Map 1.39): `xaero/minimap`,
   `xaero/world-map`, key `Multiplayer_<host-without-port>`. Legacy roots
   `XaeroWaypoints/`/`XaeroWorldMap/` are pre-2025 only.
+  **Dir mode syncs the CONTENT of the per-server container** (`config.txt`,
+  `dim%0/`, `null/`, `DIM1/`...), never the container itself — nesting one
+  server's container inside another's produces a node the mod ignores.
+  Verified in production (artifact cleaned into `xaero/.syncgroups-artifact-backup-*`).
 - Litematica: per-server data = `config/litematica/litematica_<address>*.json`
   (prefix mode) + `config/litematica/area_selections_per_world/<address>/`.
 - Bobby: `.bobby/<ip with ':'→'_'>/` — Anvil region files, NOT SQLite. Closes
