@@ -1,0 +1,11 @@
+{
+  "syncgroups.title": "Sync Groups",
+  "syncgroups.manage.title": "Sync Groups",
+  "syncgroups.manage.new": "New group",
+  "syncgroups.manage.remove": "Remove",
+  "syncgroups.pick.title": "Select servers to group",
+  "syncgroups.pick.next": "Next",
+  "syncgroups.create.title": "Create Sync Group",
+  "syncgroups.create.tag": "Tag (max 16 chars)",
+  "syncgroups.create.confirm": "Create"
+}

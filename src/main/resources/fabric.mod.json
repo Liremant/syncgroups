@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "id": "syncgroups",
+  "version": "${version}",
+  "name": "Sync Groups",
+  "description": "Share per-server client mod data (waypoints, maps, caches) between groups of servers.",
+  "authors": [],
+  "license": "MIT",
+  "environment": "client",
+  "entrypoints": {
+    "client": [
+      "com.craftsync.syncgroups.SyncGroupsMod"
+    ]
+  },
+  "mixins": [
+    "syncgroups.mixins.json"
+  ],
+  "depends": {
+    "fabricloader": ">=0.19.5",
+    "fabric-api": "*",
+    "minecraft": "~26.2",
+    "java": ">=25"
+  }
+}

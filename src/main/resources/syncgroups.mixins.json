@@ -1,0 +1,15 @@
+{
+  "required": true,
+  "package": "com.craftsync.syncgroups.mixin",
+  "compatibilityLevel": "JAVA_25",
+  "client": [
+    "JoinMultiplayerScreenMixin",
+    "ServerEntryTagMixin"
+  ],
+  "overwrites": {
+    "requireAnnotations": true
+  },
+  "injectors": {
+    "defaultRequire": 1
+  }
+}
