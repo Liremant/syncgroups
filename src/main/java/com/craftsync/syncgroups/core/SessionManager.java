@@ -35,7 +35,7 @@ public final class SessionManager {
     }
 
     /** Called on login to a server. Returns true when a pull was performed. */
-    public boolean onLogin(String address, String serverName) {
+    public synchronized boolean onLogin(String address, String serverName) {
         String key = ServerKey.normalize(address);
         Optional<Group> group = store.byServer(key);
         if (group.isEmpty()) {
@@ -57,7 +57,7 @@ public final class SessionManager {
     }
 
     /** Called on END_CLIENT_TICK; fires the periodic push on a worker thread. */
-    public void tick() {
+    public synchronized void tick() {
         if (currentGroup == null || System.currentTimeMillis() - lastPushAt < periodicPushMs) {
             return;
         }
@@ -77,7 +77,7 @@ public final class SessionManager {
     }
 
     /** Called on disconnect — must run the push before the game tears down world dirs. */
-    public void onDisconnect() {
+    public synchronized void onDisconnect() {
         if (currentGroup == null) {
             return;
         }

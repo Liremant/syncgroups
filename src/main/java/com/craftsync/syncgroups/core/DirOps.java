@@ -25,6 +25,18 @@ public final class DirOps {
     }
 
     public static void copyTree(Path from, Path to) throws IOException {
+        if (Files.isRegularFile(from)) {
+            // Single-file copy (e.g. Litematica's litematica_<server>.json) —
+            // 'to' IS the file, not a directory to put it into.
+            Files.createDirectories(to.getParent());
+            Files.copy(from, to, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.COPY_ATTRIBUTES);
+            return;
+        }
+        if (Files.exists(to)) {
+            // Overwrite semantics: the target may exist as a file while we
+            // copy a directory (or vice versa) — remove it either way.
+            deleteTree(to);
+        }
         Files.createDirectories(to);
         try (Stream<Path> s = Files.walk(from)) {
             for (Path src : (Iterable<Path>) s::iterator) {
@@ -32,6 +44,7 @@ public final class DirOps {
                 if (Files.isDirectory(src)) {
                     Files.createDirectories(dst);
                 } else {
+                    Files.createDirectories(dst.getParent());
                     Files.copy(src, dst, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.COPY_ATTRIBUTES);
                 }
             }

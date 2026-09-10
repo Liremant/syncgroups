@@ -48,7 +48,12 @@ public class SyncGroupsMod implements ClientModInitializer {
         engine = new SyncEngine(gameDir, config, FabricLoader.getInstance()::isModLoaded);
         session = new SessionManager(engine, store, config.periodicPushMinutes * 60_000L);
 
-        ClientPlayConnectionEvents.JOIN.register((handler, sender, client) -> {
+        // Pull must happen BEFORE any data-owning mod opens its storage.
+        // ClientPlayConnectionEvents.JOIN fires too late: Xaero/Bobby already
+        // initialized their sessions (verified in production logs), so they
+        // kept serving stale in-memory data over our freshly pulled files.
+        // INIT fires when the play handler is created, before the login packet.
+        ClientPlayConnectionEvents.INIT.register((handler, client) -> {
             if (client != null && client.getCurrentServer() != null) {
                 ServerData server = client.getCurrentServer();
                 session.onLogin(server.ip, server.name);

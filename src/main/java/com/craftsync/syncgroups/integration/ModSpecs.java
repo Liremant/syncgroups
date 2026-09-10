@@ -14,11 +14,12 @@ public final class ModSpecs {
     public static List<ModSyncSpec> defaults() {
         return List.of(
                 // Minimap ≥ 25.3: .minecraft/xaero/minimap/Multiplayer_<address-without-port>/
-                // Legacy (≤ 25.2): XaeroWaypoints/ — set root in paths.json for old installs.
-                new ModSyncSpec("xaerominimap", "files", "none",
+                // probe-lock: Xaero writes via temp+rename and holds no persistent locks,
+                // but give the session teardown a moment to flush before pushing.
+                new ModSyncSpec("xaerominimap", "files", "probe-lock",
                         new ModSyncSpec.Root("xaero/minimap", "dir", "Multiplayer_{host}")),
                 // World Map ≥ 1.39: .minecraft/xaero/world-map/Multiplayer_<address-without-port>/
-                new ModSyncSpec("xaeroworldmap", "files", "none",
+                new ModSyncSpec("xaeroworldmap", "files", "probe-lock",
                         new ModSyncSpec.Root("xaero/world-map", "dir", "Multiplayer_{host}")),
                 // Per-server files litematica_<address>*.json + area_selections_per_world/<address>/
                 new ModSyncSpec("litematica", "files", "none",
