@@ -100,3 +100,8 @@ caches) is shared across the group as if it were one server (full spec: the
   one. `StorageCloseWaiter` probe-lock is best-effort, especially on Linux
   (SQLite holds no persistent POSIX locks while idle) — keep it honest in
   comments and logs.
+- **The join pull runs on `ClientPlayConnectionEvents.INIT`, never JOIN.**
+  Verified in production: on JOIN, Xaero has already initialized its sessions
+  (its log line precedes our pull by ~1s) and keeps serving stale in-memory
+  data over freshly pulled files. INIT fires before the login packet, on the
+  netty thread — SessionManager methods are synchronized because of that.
