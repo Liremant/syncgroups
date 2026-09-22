@@ -96,27 +96,43 @@ public final class SyncEngine {
 
     /** Spec §4.3 + §7 recovery-before-pull. */
     public void pullForJoin(Group group, String serverKey, String serverName) throws IOException {
+        Diag.info("PULL: group='%s' key='%s' name='%s'", group.tag, serverKey, serverName);
         recoverDirtyMarkers(group);
-        for (ModSyncSpec spec : activeSpecs()) {
+        List<ModSyncSpec> specs = activeSpecs();
+        if (specs.isEmpty()) {
+            Diag.warn("PULL: no supported mods detected as installed — nothing to sync. "
+                    + "Check that the mod ids in paths.json match the installed jars.");
+        }
+        for (ModSyncSpec spec : specs) {
             for (ModSyncSpec.Root root : spec.roots) {
+                String tag = spec.modId + "/" + root.syncName();
                 Path sync = syncDir(group.id, spec.modId, root);
-                if (!DirOps.existsAndNonEmpty(sync)) {
-                    continue; // first join for this mod — nothing to give the server yet
-                }
                 Map<String, String> v = vars(serverKey, serverName);
+                Diag.info("PULL %s: sync=%s", tag, Diag.describe(sync));
+                Diag.info("PULL %s: vars=%s", tag, v);
+                if (!DirOps.existsAndNonEmpty(sync)) {
+                    Diag.info("PULL %s: sync copy is empty — first join for this mod, skipping", tag);
+                    continue;
+                }
                 if ("prefix".equals(root.mode)) {
                     // Overwrite the local per-server entries we manage, then restore the synced set.
-                    for (Path entry : root.resolveExisting(gameDir, v)) {
+                    List<Path> existing = root.resolveExisting(gameDir, v);
+                    Diag.info("PULL %s: prefix mode, deleting %d local entr(ies): %s", tag, existing.size(), existing);
+                    for (Path entry : existing) {
                         DirOps.deleteTree(entry);
                     }
+                    Path dest = gameDir.resolve(root.path);
                     try (Stream<Path> s = Files.list(sync)) {
                         for (Path entry : (Iterable<Path>) s::iterator) {
-                            DirOps.copyTree(entry, gameDir.resolve(root.path).resolve(entry.getFileName().toString()));
+                            Path target = dest.resolve(entry.getFileName().toString());
+                            DirOps.copyTree(entry, target);
+                            Diag.info("PULL %s: %s -> %s", tag, entry.getFileName(), Diag.describe(target));
                         }
                     }
                 } else {
                     Path local = root.resolvePrimary(gameDir, v);
                     List<Path> existing = root.resolveExisting(gameDir, v);
+                    Diag.info("PULL %s: local=%s existing=%d", tag, local, existing.size());
                     for (Path e : existing) {
                         DirOps.deleteTree(e);
                     }
@@ -131,50 +147,80 @@ public final class SyncEngine {
                     // unreadable nested node (verified in production).
                     try (Stream<Path> s = Files.list(sync)) {
                         for (Path child : (Iterable<Path>) s::iterator) {
-                            DirOps.copyTree(child, local.resolve(child.getFileName().toString()));
+                            Path target = local.resolve(child.getFileName().toString());
+                            DirOps.copyTree(child, target);
+                            Diag.info("PULL %s: %s -> %s", tag, child.getFileName(), Diag.describe(target));
                         }
                     }
+                    Diag.info("PULL %s: result %s", tag, Diag.describe(local));
+                    Diag.tree("PULL " + tag + " local", local, 2);
+                    Diag.tree("PULL " + tag + " sync", sync, 2);
                 }
             }
         }
-        for (ModSyncSpec spec : activeSpecs()) {
+        for (ModSyncSpec spec : specs) {
             writeMarker(group, spec.modId, serverKey, serverName);
         }
+        Diag.info("PULL: done for key='%s'", serverKey);
     }
 
     // ------------------------------------------------------------------ leave
 
     /** Spec §4.4 / §7 push. Called on disconnect and by the periodic timer. */
     public boolean push(Group group, String serverKey, String serverName, boolean removeMarker) throws IOException {
+        Diag.info("PUSH: group='%s' key='%s' name='%s' removeMarker=%s",
+                group.tag, serverKey, serverName, removeMarker);
         boolean allOk = true;
-        for (ModSyncSpec spec : activeSpecs()) {
+        List<ModSyncSpec> specs = activeSpecs();
+        if (specs.isEmpty()) {
+            Diag.warn("PUSH: no supported mods detected as installed — nothing to push.");
+        }
+        long timeout = config.storageCloseTimeoutSeconds * 1000L;
+        for (ModSyncSpec spec : specs) {
             for (ModSyncSpec.Root root : spec.roots) {
+                String tag = spec.modId + "/" + root.syncName();
                 List<Path> local = root.resolveExisting(gameDir, vars(serverKey, serverName));
                 if (local.isEmpty()) {
+                    Diag.info("PUSH %s: no local data for key='%s' — skipping", tag, serverKey);
                     continue;
                 }
-                long timeout = config.storageCloseTimeoutSeconds * 1000L;
                 for (Path entry : local) {
-                    if (!StorageCloseWaiter.awaitClosed(entry, spec.closeWait.equals("none") ? 0 : timeout)) {
-                        allOk = false;
-                        continue;
+                    Diag.info("PUSH %s: source %s", tag, Diag.describe(entry));
+                    boolean waiting = !spec.closeWait.equals("none");
+                    if (waiting) {
+                        // Mods that write on teardown (Xaero flushes world-map regions
+                        // *after* our disconnect handler) need a quiescence wait first,
+                        // otherwise we copy a half-written snapshot.
+                        boolean quiet = StorageCloseWaiter.awaitQuiescent(entry, timeout, config.pushQuiescenceMs);
+                        boolean closed = StorageCloseWaiter.awaitClosed(entry, timeout);
+                        Diag.info("PUSH %s: quiescent=%s closed=%s (mode=%s)", tag, quiet, closed, spec.closeWait);
+                        if (!closed) {
+                            Diag.warn("PUSH %s: storage did not confirm closure — skipping to avoid corruption", tag);
+                            allOk = false;
+                            continue;
+                        }
                     }
                     Optional<String> suspect = IntegrityChecker.forName(spec.integrity).check(entry);
                     if (suspect.isPresent()) {
-                        LOGGER.warn("Integrity check failed for {} ({}): {} — keeping sync copy as is",
-                                spec.modId, serverKey, suspect.get());
+                        Diag.warn("PUSH %s: integrity check failed (%s) — keeping sync copy as is",
+                                tag, suspect.get());
                         allOk = false;
                         continue;
                     }
-                    copyLocalIntoSync(entry, syncDir(group.id, spec.modId, root), root);
+                    Path sync = syncDir(group.id, spec.modId, root);
+                    copyLocalIntoSync(entry, sync, root);
+                    Diag.info("PUSH %s: %s -> %s", tag, entry, Diag.describe(sync));
+                    Diag.tree("PUSH " + tag + " sync", sync, 2);
                 }
             }
         }
         if (allOk && removeMarker) {
-            for (ModSyncSpec spec : activeSpecs()) {
+            for (ModSyncSpec spec : specs) {
                 Files.deleteIfExists(markerPath(group.id, spec.modId, serverKey));
             }
+            Diag.info("PUSH: session markers cleared");
         }
+        Diag.info("PUSH: done for key='%s' allOk=%s", serverKey, allOk);
         return allOk;
     }
 

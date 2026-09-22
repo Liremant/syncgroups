@@ -1,19 +1,18 @@
 package com.craftsync.syncgroups.core;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import java.io.IOException;
+import java.util.List;
 import java.util.Optional;
 
 /**
  * Tracks the active sync session: which group/server we are on, drives the
  * periodic push (spec §7) and the disconnect push (§4.4). Pure state + engine
  * calls; MC event wiring lives in the client entrypoint.
+ *
+ * Every branch here is logged through {@link Diag} — when sync silently does
+ * nothing on someone else's machine, this is the only evidence we get.
  */
 public final class SessionManager {
-
-    private static final Logger LOGGER = LoggerFactory.getLogger("syncgroups/session");
 
     private final SyncEngine engine;
     private final GroupsStore store;
@@ -23,6 +22,8 @@ public final class SessionManager {
     private String currentServerKey;
     private String currentServerName;
     private long lastPushAt;
+    private boolean pullDone;
+    private volatile Thread pushThread;
 
     public SessionManager(SyncEngine engine, GroupsStore store, long periodicPushMs) {
         this.engine = engine;
@@ -34,26 +35,60 @@ public final class SessionManager {
         return Optional.ofNullable(currentGroup);
     }
 
-    /** Called on login to a server. Returns true when a pull was performed. */
+    public boolean pullDone() {
+        return pullDone;
+    }
+
+    /** Called before connecting (ConnectScreen) or at INIT as a fallback. */
     public synchronized boolean onLogin(String address, String serverName) {
-        String key = ServerKey.normalize(address);
-        Optional<Group> group = store.byServer(key);
-        if (group.isEmpty()) {
+        if (address == null || address.isBlank()) {
+            Diag.warn("JOIN: empty address (name='%s') — nothing to do", serverName);
             return false;
         }
+        String key = ServerKey.normalize(address);
+        List<Group> all = store.all();
+        Diag.info("JOIN: address='%s' name='%s' -> key='%s'; known groups=%d, servers=%s",
+                address, serverName, key, all.size(), allServers(all));
+
+        if (pullDone && key.equals(currentServerKey)) {
+            Diag.info("JOIN: already pulled for key='%s' in this session — skipping duplicate pull", key);
+            return true;
+        }
+
+        Optional<Group> group = store.byServer(key);
+        if (group.isEmpty()) {
+            Diag.info("JOIN: no group contains key='%s' — sync not applicable for this server", key);
+            return false;
+        }
+        Diag.info("JOIN: matched group '%s' (id=%s, color=%s) for key='%s'",
+                group.get().tag, group.get().id, group.get().color, key);
+
         long start = System.currentTimeMillis();
         try {
             engine.pullForJoin(group.get(), key, serverName);
-        } catch (IOException e) {
-            LOGGER.error("Join pull failed for {} (group {})", key, group.get().id, e);
+        } catch (Exception e) {
+            Diag.error("JOIN: pull FAILED for key='" + key + "' group=" + group.get().id, e);
             return false;
         }
         currentGroup = group.get();
         currentServerKey = key;
         currentServerName = serverName;
         lastPushAt = System.currentTimeMillis();
-        LOGGER.info("Sync Group '{}' pulled in {} ms", group.get().tag, System.currentTimeMillis() - start);
+        pullDone = true;
+        Diag.info("JOIN: pull finished in %d ms for group '%s'",
+                System.currentTimeMillis() - start, group.get().tag);
         return true;
+    }
+
+    private static String allServers(List<Group> groups) {
+        StringBuilder sb = new StringBuilder("[");
+        for (Group g : groups) {
+            if (sb.length() > 1) {
+                sb.append(", ");
+            }
+            sb.append(g.id).append(':').append(g.servers);
+        }
+        return sb.append(']').toString();
     }
 
     /** Called on END_CLIENT_TICK; fires the periodic push on a worker thread. */
@@ -65,20 +100,20 @@ public final class SessionManager {
         String key = currentServerKey;
         String name = currentServerName;
         lastPushAt = System.currentTimeMillis();
-        Thread worker = new Thread(() -> {
+        Diag.info("PUSH(periodic): starting for key='%s' group='%s'", key, group.tag);
+        runAsync(() -> {
             try {
                 engine.push(group, key, name, false);
-            } catch (IOException e) {
-                LOGGER.error("Periodic push failed for {} (group {})", key, group.id, e);
+            } catch (Exception e) {
+                Diag.error("PUSH(periodic): failed for key=" + key, e);
             }
-        }, "syncgroups-periodic-push");
-        worker.setDaemon(true);
-        worker.start();
+        });
     }
 
-    /** Called on disconnect — must run the push before the game tears down world dirs. */
+    /** Called on disconnect. Runs off-thread so the UI never freezes. */
     public synchronized void onDisconnect() {
         if (currentGroup == null) {
+            Diag.info("DISCONNECT: no active sync session — nothing to push");
             return;
         }
         Group group = currentGroup;
@@ -87,11 +122,37 @@ public final class SessionManager {
         currentGroup = null;
         currentServerKey = null;
         currentServerName = null;
-        try {
-            boolean ok = engine.push(group, key, name, true);
-            LOGGER.info("Disconnect push {} for group '{}'", ok ? "ok" : "partial", group.tag);
-        } catch (IOException e) {
-            LOGGER.error("Disconnect push failed for {} (group {})", key, group.id, e);
+        pullDone = false;
+        Diag.info("DISCONNECT: pushing for key='%s' group='%s'", key, group.tag);
+        runAsync(() -> {
+            try {
+                boolean ok = engine.push(group, key, name, true);
+                Diag.info("DISCONNECT: push %s for group '%s'", ok ? "ok" : "partial", group.tag);
+            } catch (Exception e) {
+                Diag.error("DISCONNECT: push failed for key=" + key, e);
+            }
+        });
+    }
+
+    private void runAsync(Runnable r) {
+        Thread t = new Thread(r, "syncgroups-push");
+        t.setDaemon(true);
+        pushThread = t;
+        t.start();
+    }
+
+    /** Best-effort: let an in-flight push finish before the JVM goes away. */
+    public void awaitPendingPush(long timeoutMs) {
+        Thread t = pushThread;
+        if (t == null || !t.isAlive()) {
+            return;
         }
+        Diag.info("SHUTDOWN: waiting up to %d ms for in-flight push", timeoutMs);
+        try {
+            t.join(timeoutMs);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+        Diag.info("SHUTDOWN: push thread %s", t.isAlive() ? "still running (abandoned)" : "finished");
     }
 }

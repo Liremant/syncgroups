@@ -3,6 +3,7 @@
   "package": "com.craftsync.syncgroups.mixin",
   "compatibilityLevel": "JAVA_25",
   "client": [
+    "ConnectScreenMixin",
     "JoinMultiplayerScreenMixin",
     "ServerEntryTagMixin"
   ],

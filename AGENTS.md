@@ -104,8 +104,40 @@ caches) is shared across the group as if it were one server (full spec: the
   one. `StorageCloseWaiter` probe-lock is best-effort, especially on Linux
   (SQLite holds no persistent POSIX locks while idle) — keep it honest in
   comments and logs.
-- **The join pull runs on `ClientPlayConnectionEvents.INIT`, never JOIN.**
-  Verified in production: on JOIN, Xaero has already initialized its sessions
-  (its log line precedes our pull by ~1s) and keeps serving stale in-memory
-  data over freshly pulled files. INIT fires before the login packet, on the
-  netty thread — SessionManager methods are synchronized because of that.
+- **The join pull has three hooks, in order: `ConnectScreen.startConnecting`
+  (primary, via ConnectScreenMixin), `ClientPlayConnectionEvents.INIT` (fallback),
+  then a client-tick retry if INIT could not resolve the server.**
+  Do NOT rely on `Minecraft.getCurrentServer()` alone: it reads from the
+  connection handler and can be null at INIT, which silently turned the whole
+  join pull into a no-op. `handler.getServerData()` is the better source at INIT.
+  JOIN is too late — Xaero has already initialized its sessions there and keeps
+  serving stale in-memory data over freshly pulled files (verified in production).
+  SessionManager methods are synchronized because these hooks fire on different
+  threads (render thread for ConnectScreen, netty for INIT).
+- **Push waits for quiescence, not just locks.** Xaero flushes world-map regions
+  *after* our disconnect handler runs and holds no file locks, so a probe-lock
+  check alone passes instantly and copies a half-written snapshot.
+  `StorageCloseWaiter.awaitQuiescent(dir, timeout, stableMs)` polls a
+  path+size+mtime fingerprint until it stops changing. Tune via
+  `pushQuiescenceMs` in paths.json.
+- Disconnect/periodic pushes run on a background thread (never freeze the UI)
+  and a shutdown hook joins the in-flight push for up to 5 s. Caveat: FastQuit
+  can terminate the JVM abruptly — a hard quit right after disconnecting may
+  truncate the final push; the periodic push is the backstop.
+
+## Diagnostics (remote debugging)
+
+- **`syncgroups/diagnostics.log` is the single file to request from a tester.**
+  `Diag` mirrors everything to the normal log and appends to this file (rotated
+  to `diagnostics.prev.log` past 4 MB). It never throws — a broken diagnostics
+  file must not break syncing.
+- Logged at every decision point: game dir and env, resolved config values, each
+  mod's installed state and roots, loaded groups with their server keys, the raw
+  address and normalized key on connect, which group matched, per-root paths with
+  file counts/bytes before and after each copy, quiescence/lock results, and
+  bounded directory trees (`Diag.tree`) of the pulled and pushed data.
+- When sync silently does nothing, read the log top-down: `JOIN:` tells whether
+  the server matched a group, `PULL`/`PUSH` lines tell whether paths resolved.
+- `paths.json` carries a `configVersion`; bump `PathsConfig.CONFIG_VERSION`
+  whenever built-in defaults change, otherwise existing installs keep stale
+  values (the old file is preserved as `paths.v<N>.bak`).

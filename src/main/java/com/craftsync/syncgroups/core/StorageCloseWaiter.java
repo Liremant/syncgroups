@@ -66,6 +66,59 @@ public final class StorageCloseWaiter {
         return false;
     }
 
+    /**
+     * Waits until no file under {@code dir} changes for {@code stableMs}.
+     * This is what actually catches mods that write during teardown but hold no
+     * locks (Xaero flushes world-map regions after the disconnect event): the
+     * probe-lock check alone would pass immediately and we would copy a
+     * half-written snapshot.
+     */
+    public static boolean awaitQuiescent(Path dir, long timeoutMs, long stableMs) {
+        if (!Files.isDirectory(dir)) {
+            return true;
+        }
+        long deadline = System.currentTimeMillis() + timeoutMs;
+        long stableSince = -1;
+        long last = fingerprint(dir);
+        while (System.currentTimeMillis() < deadline) {
+            try {
+                Thread.sleep(200);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return false;
+            }
+            long cur = fingerprint(dir);
+            if (cur != last) {
+                last = cur;
+                stableSince = -1;
+            } else if (stableSince == -1) {
+                stableSince = System.currentTimeMillis();
+            } else if (System.currentTimeMillis() - stableSince >= stableMs) {
+                return true;
+            }
+        }
+        LOGGER.warn("Timed out waiting for {} to stop changing — pushing anyway", dir);
+        return false;
+    }
+
+    /** Cheap order-sensitive digest of relative path + size + mtime for every file. */
+    private static long fingerprint(Path dir) {
+        long h = 1125899906842597L;
+        try (Stream<Path> s = Files.walk(dir)) {
+            for (Path p : (Iterable<Path>) s.filter(Files::isRegularFile)::iterator) {
+                h = 31 * h + p.getFileName().toString().hashCode();
+                try {
+                    h = 31 * h + Files.size(p);
+                    h = 31 * h + Files.getLastModifiedTime(p).toMillis();
+                } catch (IOException ignored) {
+                }
+            }
+        } catch (IOException e) {
+            return h;
+        }
+        return h;
+    }
+
     private static boolean filesQuiet(Path dir) {
         try (Stream<Path> s = Files.walk(dir)) {
             for (Path p : (Iterable<Path>) s.filter(Files::isRegularFile)::iterator) {
