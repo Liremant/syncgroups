@@ -22,7 +22,11 @@ import java.util.Map;
  */
 public final class PathsConfig {
 
-    /** Bump when built-in defaults change in a way existing files must pick up. */
+    /**
+     * Bump only when an *existing* built-in default changes semantics in a way
+     * stale files must pick up. Purely additive fields need no bump: Gson keeps
+     * field initializers for keys missing from the file.
+     */
     public static final int CONFIG_VERSION = 2;
 
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
@@ -32,10 +36,24 @@ public final class PathsConfig {
     public int storageCloseTimeoutSeconds = 30;
     /** How long a mod's files must stay unchanged before we treat a write as finished. */
     public int pushQuiescenceMs = 1500;
+    /** Draw the group tag on server entries in the multiplayer list. */
+    public boolean showGroupTags = true;
+    /**
+     * "copy" — the group folder holds copies that are pulled on join and pushed
+     * on leave; local data stays real and self-contained.
+     * "symlink" — the local per-server folder becomes a link into the group
+     * folder, so every grouped server reads and writes the same files.
+     * Symlink mode applies to directory-shaped roots only (Xaero, Bobby, DH);
+     * Litematica-style per-file roots always stay on copies.
+     */
+    public String syncMode = "copy";
     public Map<String, ModSyncSpec> mods = new LinkedHashMap<>();
 
-    public static PathsConfig loadOrCreate(Path file) {
-        PathsConfig config = null;
+    public boolean symlinkMode() {
+        return "symlink".equalsIgnoreCase(syncMode);
+    }
+
+    public static PathsConfig loadOrCreate(Path file) {        PathsConfig config = null;
         boolean stale = false;
 
         if (Files.exists(file)) {
@@ -76,5 +94,11 @@ public final class PathsConfig {
             Diag.error("CONFIG: failed to write " + file, e);
         }
         return config;
+    }
+
+    /** Writes the given config back to disk (settings screen edits). */
+    public static void save(Path file, PathsConfig config) throws IOException {
+        Files.createDirectories(file.getParent());
+        Files.writeString(file, GSON.toJson(config));
     }
 }

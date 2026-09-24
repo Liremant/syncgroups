@@ -1,5 +1,6 @@
 package com.craftsync.syncgroups.ui;
 
+import com.craftsync.syncgroups.core.Colors;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.input.MouseButtonEvent;
@@ -16,39 +17,45 @@ public class ColorPicker {
     private static final int PREVIEW_H = 16;
 
     private final int x, y, w, h;
-    /** Hue in [0,1), sat/val in [0,1]. Defaults to green (#55FF55). */
-    private float hue = 1f / 3f, sat = 0.667f, val = 1f;
+    /** Hue in [0,1), sat/val in [0,1]. */
+    private float hue, sat = 0.72f, val = 0.95f;
     private boolean dragSv, dragHue;
 
     public ColorPicker(int x, int y, int w, int h) {
+        this(x, y, w, h, Colors.randomGroupColor());
+    }
+
+    public ColorPicker(int x, int y, int w, int h, int initialRgb) {
         this.x = x;
         this.y = y;
         this.w = w;
         this.h = h;
+        setRgb(initialRgb);
+    }
+
+    /** Points the picker at an existing color without losing the current hue. */
+    public final void setRgb(int rgb) {
+        float r = ((rgb >> 16) & 0xFF) / 255f;
+        float g = ((rgb >> 8) & 0xFF) / 255f;
+        float b = (rgb & 0xFF) / 255f;
+        float max = Math.max(r, Math.max(g, b));
+        float min = Math.min(r, Math.min(g, b));
+        float delta = max - min;
+        val = max;
+        sat = max == 0 ? 0 : delta / max;
+        if (delta == 0) {
+            hue = 0;
+        } else if (max == r) {
+            hue = ((g - b) / delta % 6 + 6) / 6f;
+        } else if (max == g) {
+            hue = (((b - r) / delta) + 2) / 6f;
+        } else {
+            hue = (((r - g) / delta) + 4) / 6f;
+        }
     }
 
     public int colorInt() {
-        return 0xFF000000 | hsvToRgb(hue, sat, val);
-    }
-
-    public static int hsvToRgb(float h, float s, float v) {
-        int i = (int) (h * 6) % 6;
-        float f = h * 6 - (int) (h * 6);
-        float p = v * (1 - s);
-        float q = v * (1 - f * s);
-        float t = v * (1 - (1 - f) * s);
-        return switch (i) {
-            case 0 -> rgb(v, t, p);
-            case 1 -> rgb(q, v, p);
-            case 2 -> rgb(p, v, t);
-            case 3 -> rgb(p, q, v);
-            case 4 -> rgb(t, p, v);
-            default -> rgb(v, p, q);
-        };
-    }
-
-    private static int rgb(float r, float g, float b) {
-        return (Math.round(r * 255) << 16) | (Math.round(g * 255) << 8) | Math.round(b * 255);
+        return 0xFF000000 | Colors.hsvToRgb(hue, sat, val);
     }
 
     private int hueX() {
@@ -115,14 +122,14 @@ public class ColorPicker {
                 float s = c / (float) cells;
                 int px = x + c * w / cells;
                 int py = y + r * h / cells;
-                gui.fill(px, py, px + cw, py + ch, 0xFF000000 | hsvToRgb(hue, s, v));
+                gui.fill(px, py, px + cw, py + ch, 0xFF000000 | Colors.hsvToRgb(hue, s, v));
             }
         }
         // Hue strip.
         for (int r = 0; r < cells; r++) {
             float hu = r / (float) cells;
             int py = y + r * h / cells;
-            gui.fill(hueX(), py, hueX() + HUE_STRIP_W, py + ch, 0xFF000000 | hsvToRgb(hu, 1f, 1f));
+            gui.fill(hueX(), py, hueX() + HUE_STRIP_W, py + ch, 0xFF000000 | Colors.hsvToRgb(hu, 1f, 1f));
         }
         // Hue marker: dark line + light line.
         int hy = y + Math.round(hue * h);

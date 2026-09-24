@@ -1,6 +1,7 @@
 package com.craftsync.syncgroups.ui;
 
 import com.craftsync.syncgroups.SyncGroupsMod;
+import com.craftsync.syncgroups.core.Colors;
 import com.craftsync.syncgroups.core.Group;
 import com.craftsync.syncgroups.core.ServerKey;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
@@ -32,18 +33,25 @@ public class CreateGroupScreen extends Screen {
     private final List<ServerData> servers;
     private EditBox tagBox;
     private ColorPicker picker;
+    private int initialColor;
 
     public CreateGroupScreen(Screen parent, Screen doneScreen, List<ServerData> servers) {
         super(Component.translatable("syncgroups.create.title"));
         this.parent = parent;
         this.doneScreen = doneScreen;
         this.servers = servers;
+        // Chosen once per screen: re-initialising on window resize must not
+        // silently hand the user a different color than the one they picked.
+        this.initialColor = Colors.randomGroupColor();
     }
 
     @Override
     protected void init() {
         int x0 = width / 2 - 170;
-        picker = new ColorPicker(x0, 50, PICKER_W, PICKER_H);
+        if (picker != null) {
+            initialColor = picker.colorInt();
+        }
+        picker = new ColorPicker(x0, 50, PICKER_W, PICKER_H, initialColor);
 
         int rx = x0 + PICKER_W + 50;
 
@@ -60,9 +68,6 @@ public class CreateGroupScreen extends Screen {
         addRenderableWidget(Button.builder(Component.translatable("gui.cancel"), b -> onClose())
                 .bounds(rx, 136, 130, 20)
                 .build());
-    }
-
-    private void g_placeholder() {
     }
 
     private void onCreate() {

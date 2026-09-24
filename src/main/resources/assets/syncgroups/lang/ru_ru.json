@@ -9,5 +9,16 @@
   "syncgroups.create.title": "Создание Sync Group",
   "syncgroups.create.step": "Шаг 2 из 2 — название и цвет",
   "syncgroups.create.tag": "Название (макс. 16 символов)",
-  "syncgroups.create.confirm": "Создать"
+  "syncgroups.create.confirm": "Создать",
+
+  "syncgroups.config.title": "Настройки Sync Groups",
+  "syncgroups.config.tags": "Метки групп в списке серверов: %s",
+  "syncgroups.config.mode": "Режим синхронизации: %s",
+  "syncgroups.config.mode.copy": "копии (залив при входе, выгрузка при выходе)",
+  "syncgroups.config.mode.symlink": "симлинки (одна общая папка)",
+  "syncgroups.config.push": "Фоновое сохранение каждые %s мин",
+  "syncgroups.config.on": "показаны",
+  "syncgroups.config.off": "скрыты",
+  "syncgroups.config.openFolder": "Открыть папку данных",
+  "syncgroups.config.hint": "Симлинки в Windows требуют режима разработчика или прав админа"
 }

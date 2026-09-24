@@ -28,6 +28,9 @@ public class ServerEntryTagMixin {
     @Inject(method = "extractContent", at = @At("TAIL"))
     private void syncgroups$drawTag(GuiGraphicsExtractor g, int mouseX, int mouseY, boolean hovering,
                                     float partialTick, CallbackInfo ci) {
+        if (SyncGroupsMod.config() != null && !SyncGroupsMod.config().showGroupTags) {
+            return;
+        }
         Group group = SyncGroupsMod.store().byServer(ServerKey.normalize(serverData.ip)).orElse(null);
         if (group == null) {
             return;

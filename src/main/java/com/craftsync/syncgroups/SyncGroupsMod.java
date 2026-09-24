@@ -1,6 +1,7 @@
 package com.craftsync.syncgroups;
 
 import com.craftsync.syncgroups.core.Diag;
+import com.craftsync.syncgroups.core.DirOps;
 import com.craftsync.syncgroups.core.GroupsStore;
 import com.craftsync.syncgroups.core.SessionManager;
 import com.craftsync.syncgroups.core.SyncEngine;
@@ -14,6 +15,8 @@ import net.minecraft.client.multiplayer.ServerData;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 
 public class SyncGroupsMod implements ClientModInitializer {
@@ -47,7 +50,7 @@ public class SyncGroupsMod implements ClientModInitializer {
     @Override
     public void onInitializeClient() {
         Path gameDir = FabricLoader.getInstance().getGameDir();
-        Path root = gameDir.resolve("syncgroups");
+        Path root = gameDir.resolve("config").resolve("syncgroups");
         Diag.init(root.resolve("diagnostics.log"));
 
         Diag.session("Sync Groups starting (v" + version() + ")");
@@ -55,13 +58,27 @@ public class SyncGroupsMod implements ClientModInitializer {
         Diag.info("ENV: java=%s os=%s",
                 System.getProperty("java.version"), System.getProperty("os.name"));
 
+        migrateLegacyRoot(gameDir, root);
+
         config = PathsConfig.loadOrCreate(root.resolve("paths.json"));
         store = new GroupsStore(root.resolve("groups.json"));
-        engine = new SyncEngine(gameDir, config, FabricLoader.getInstance()::isModLoaded);
+        engine = new SyncEngine(gameDir, root, config, FabricLoader.getInstance()::isModLoaded);
         session = new SessionManager(engine, store, config.periodicPushMinutes * 60_000L);
 
-        Diag.info("CONFIG: periodicPushMinutes=%d storageCloseTimeoutSeconds=%d pushQuiescenceMs=%d",
-                config.periodicPushMinutes, config.storageCloseTimeoutSeconds, config.pushQuiescenceMs);
+        Diag.info("CONFIG: periodicPushMinutes=%d storageCloseTimeoutSeconds=%d pushQuiescenceMs=%d "
+                        + "syncMode=%s showGroupTags=%s",
+                config.periodicPushMinutes, config.storageCloseTimeoutSeconds, config.pushQuiescenceMs,
+                config.syncMode, config.showGroupTags);
+        if (config.symlinkMode()) {
+            String problem = DirOps.probeSymlinkSupport(root.resolve(".probe"));
+            if (problem == null) {
+                Diag.info("CONFIG: symlink support OK — symlink mode will be used for directory-shaped roots");
+            } else {
+                Diag.warn("CONFIG: symlink mode is ON but this system cannot create symlinks (%s). "
+                        + "On Windows enable Developer Mode or run as administrator, or switch syncMode "
+                        + "back to \"copy\" in paths.json.", problem);
+            }
+        }
         for (ModSyncSpec spec : config.mods.values()) {
             boolean installed = FabricLoader.getInstance().isModLoaded(spec.modId);
             Diag.info("CONFIG: mod '%s' installed=%s closeWait=%s integrity=%s roots=%d",
@@ -126,6 +143,36 @@ public class SyncGroupsMod implements ClientModInitializer {
                 () -> session.awaitPendingPush(5000), "syncgroups-shutdown"));
 
         Diag.info("READY: Sync Groups initialized with %d group(s)", store.all().size());
+    }
+
+    /**
+     * The data folder used to live directly in the game dir; it now lives under
+     * {@code config/} like every other mod. Move it once, rather than leaving two
+     * half-populated trees and silently starting with no groups.
+     */
+    private static void migrateLegacyRoot(Path gameDir, Path newRoot) {
+        Path oldRoot = gameDir.resolve("syncgroups");
+        if (!Files.isDirectory(oldRoot) || Files.exists(newRoot)) {
+            return;
+        }
+        try {
+            Files.createDirectories(newRoot.getParent());
+            Files.move(oldRoot, newRoot);
+            Diag.info("MIGRATE: moved %s -> %s", oldRoot, newRoot);
+        } catch (IOException e) {
+            Diag.error("MIGRATE: could not move " + oldRoot + " to " + newRoot
+                    + " — continuing with the new location, old data left untouched", e);
+        }
+    }
+
+    /** Persists config edits made in the Mod Menu screen. */
+    public static void saveConfig() {
+        try {
+            PathsConfig.save(FabricLoader.getInstance().getGameDir()
+                    .resolve("config").resolve("syncgroups").resolve("paths.json"), config);
+        } catch (Exception e) {
+            Diag.error("CONFIG: failed to save from settings screen", e);
+        }
     }
 
     private static String describe(ServerData data) {

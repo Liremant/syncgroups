@@ -13,15 +13,29 @@ caches) is shared across the group as if it were one server (full spec: the
   `SessionManager`, `IntegrityChecker`, `StorageCloseWaiter`, `DirOps`.
 - `integration/` — supported-mod table (`ModSpecs` defaults, `ModSyncSpec.Root`
   dir/prefix modes) and the user-editable `PathsConfig` (paths.json).
-- `ui/` — screens (create/manage group, server picker) on the 26.2
-  `extractRenderState` pipeline.
-- `mixin/` — `JoinMultiplayerScreenMixin` (button) and `ServerEntryTagMixin`
-  (group tag on server entries).
+- `ui/` — screens (create/manage group, server picker, Mod Menu settings) on the
+  26.2 `extractRenderState` pipeline.
+- `mixin/` — `ConnectScreenMixin` (pre-connect pull), `JoinMultiplayerScreenMixin`
+  (button), `ServerEntryTagMixin` (group tag on server entries).
+- Optional Mod Menu integration: `integration/ModMenuIntegration` + a `modmenu`
+  entrypoint. Mod Menu is `compileOnly` + `suggests` — never make it a hard
+  dependency, the mod must run without it.
 - Resources: `fabric.mod.json`, `syncgroups.mixins.json`, `assets/syncgroups/lang/`.
-- On-disk data (game dir): `syncgroups/groups.json` (metadata, hex colors),
-  `syncgroups/<gid>/<modid>/<rootSyncName>/` (shared copy), `syncgroups/<gid>/_backups/`,
-  `syncgroups/_dissolved/`, plus `syncgroups/paths.json` (path overrides,
-  regenerated on first run — do not hardcode paths in code).
+- On-disk data (game dir): `config/syncgroups/groups.json` (metadata, hex colors),
+  `config/syncgroups/<gid>/<modid>/<rootSyncName>/` (shared data), `_backups/`,
+  `_dissolved/`, `paths.json` (path overrides + settings), `diagnostics.log`.
+  **The folder lives under `config/`**, not the game dir root; `SyncGroupsMod`
+  migrates a legacy `syncgroups/` folder on startup.
+- Two sync modes (`syncMode` in paths.json, editable in Mod Menu):
+  `copy` (pull on join, push on leave) and `symlink` (the local per-server folder
+  is replaced by a relative symlink into the group folder, so every grouped server
+  works on literally the same files and there is nothing to push). Symlinks apply
+  to dir-mode roots only; Litematica's per-file roots always stay on copies.
+- `DirOps` is symlink-aware and this matters: `deleteTree` must never follow a
+  link into its target, `replaceWithRelativeSymlink` stashes the existing folder
+  and restores it when link creation fails (Windows needs Developer Mode or admin
+  rights), and links are stored as plain relative paths with no `./` prefix so
+  they work on both Linux and Windows and survive moving the game directory.
 
 ## Repo rules
 

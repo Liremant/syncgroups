@@ -1,5 +1,7 @@
 package com.craftsync.syncgroups.mixin;
 
+import com.craftsync.syncgroups.SyncGroupsMod;
+import com.craftsync.syncgroups.ui.ServerPickScreen;
 import com.craftsync.syncgroups.ui.SyncGroupsScreen;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.components.Button;
@@ -28,8 +30,18 @@ public abstract class JoinMultiplayerScreenMixin extends Screen {
     private void syncgroups$addButton(CallbackInfo ci) {
         Screen self = (Screen) (Object) this;
         this.addRenderableWidget(Button.builder(Component.translatable("syncgroups.title"),
-                        b -> Minecraft.getInstance().setScreenAndShow(new SyncGroupsScreen(self)))
+                        b -> Minecraft.getInstance().setScreenAndShow(syncgroups$openScreen(self)))
                 .bounds(6, self.height - 26, 100, 20)
                 .build());
+    }
+
+    /**
+     * With no groups yet there is nothing to manage, so the button leads straight
+     * into the creation wizard — the same way "Create New World" is what you get
+     * when the world list is empty, instead of an empty list screen.
+     */
+    private static Screen syncgroups$openScreen(Screen self) {
+        boolean empty = SyncGroupsMod.store() == null || SyncGroupsMod.store().all().isEmpty();
+        return empty ? new ServerPickScreen(self, self) : new SyncGroupsScreen(self);
     }
 }

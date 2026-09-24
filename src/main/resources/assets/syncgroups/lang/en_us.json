@@ -9,5 +9,16 @@
   "syncgroups.create.title": "Create Sync Group",
   "syncgroups.create.step": "Step 2 of 2 — tag and color",
   "syncgroups.create.tag": "Tag (max 16 chars)",
-  "syncgroups.create.confirm": "Create"
+  "syncgroups.create.confirm": "Create",
+
+  "syncgroups.config.title": "Sync Groups settings",
+  "syncgroups.config.tags": "Group tags on server list: %s",
+  "syncgroups.config.mode": "Sync mode: %s",
+  "syncgroups.config.mode.copy": "copies (pull on join, push on leave)",
+  "syncgroups.config.mode.symlink": "symlinks (one shared folder)",
+  "syncgroups.config.push": "Background push every %s min",
+  "syncgroups.config.on": "shown",
+  "syncgroups.config.off": "hidden",
+  "syncgroups.config.openFolder": "Open data folder",
+  "syncgroups.config.hint": "Symlinks need Developer Mode or admin rights on Windows"
 }

@@ -2,6 +2,7 @@ package com.craftsync.syncgroups.core;
 
 import java.io.IOException;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.Comparator;
@@ -51,9 +52,18 @@ public final class DirOps {
         }
     }
 
-    /** Copies only the per-server subdirectory tree of a mod root, not root-level global files. */
+    /**
+     * Removes a file, a directory tree, or a symlink.
+     * A symlink is deleted as a link only — never followed into its target,
+     * which is critical in symlink mode where a local path points at the
+     * group's shared folder.
+     */
     public static void deleteTree(Path dir) throws IOException {
-        if (!Files.exists(dir)) {
+        if (dir == null || !Files.exists(dir, LinkOption.NOFOLLOW_LINKS)) {
+            return;
+        }
+        if (Files.isSymbolicLink(dir)) {
+            Files.delete(dir);
             return;
         }
         try (Stream<Path> s = Files.walk(dir)) {
@@ -90,6 +100,80 @@ public final class DirOps {
                     return 0;
                 }
             }).sum();
+        }
+    }
+
+    // ------------------------------------------------------------- symlinks
+
+    public static boolean isSymlink(Path p) {
+        return p != null && Files.isSymbolicLink(p);
+    }
+
+    /**
+     * Replaces {@code link} with a symlink pointing at {@code target}, using a
+     * path relative to the link's own directory (plain names, no leading "./").
+     * Relative links survive moving the game directory, and work on both Linux
+     * and Windows — on Windows, though, creating one needs Developer Mode or
+     * administrator rights, hence the explicit message on failure.
+     *
+     * The existing content is moved aside first and restored if the link cannot
+     * be created, so a failed attempt never leaves the mod without its folder.
+     */
+    public static void replaceWithRelativeSymlink(Path link, Path target) throws IOException {
+        Files.createDirectories(link.getParent());
+        Path stash = null;
+        if (Files.exists(link, LinkOption.NOFOLLOW_LINKS)) {
+            stash = link.resolveSibling(link.getFileName() + ".syncgroups-old");
+            deleteTree(stash);
+            moveTree(link, stash);
+        }
+        Path relative = link.getParent().relativize(target);
+        try {
+            Files.createSymbolicLink(link, relative);
+        } catch (UnsupportedOperationException | IOException e) {
+            if (stash != null) {
+                moveTree(stash, link); // put the data back exactly as it was
+            }
+            throw new IOException("Could not create symlink " + link + " -> " + relative
+                    + " (on Windows this needs Developer Mode or administrator rights)", e);
+        }
+        if (stash != null) {
+            deleteTree(stash);
+        }
+    }
+
+    /**
+     * Checks that this system can actually create symlinks, by making one in a
+     * throwaway directory. Windows refuses without Developer Mode or admin
+     * rights, and finding that out at startup beats discovering it mid-join.
+     */
+    public static String probeSymlinkSupport(Path scratchDir) {
+        try {
+            Files.createDirectories(scratchDir);
+            Path target = scratchDir.resolve("probe-target");
+            Path link = scratchDir.resolve("probe-link");
+            Files.writeString(target, "x");
+            deleteTree(link);
+            Files.createSymbolicLink(link, link.getParent().relativize(target));
+            boolean ok = Files.isSymbolicLink(link) && Files.exists(link);
+            deleteTree(link);
+            Files.deleteIfExists(target);
+            return ok ? null : "symlink created but not reported as a link";
+        } catch (UnsupportedOperationException | IOException e) {
+            return e.getClass().getSimpleName() + ": " + e.getMessage();
+        }
+    }
+
+    /** True when {@code link} is already a symlink pointing at {@code target}. */
+    public static boolean linksTo(Path link, Path target) {        if (!Files.isSymbolicLink(link)) {
+            return false;
+        }
+        try {
+            Path stored = Files.readSymbolicLink(link);
+            Path resolved = link.getParent().resolve(stored).normalize();
+            return resolved.equals(target.normalize());
+        } catch (IOException e) {
+            return false;
         }
     }
 
