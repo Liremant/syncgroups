@@ -31,16 +31,29 @@ caches) is shared across the group as if it were one server (full spec: the
   replaced by a relative symlink into the group folder, so every grouped server
   works on literally the same files and there is nothing to push. Symlinks apply
   to dir-mode roots only; Litematica's per-file roots always stay on copies.
-- **A mode switch is a conversion, not a flag.** `SyncGroupsMod.linkAllGroups()`
-  (startup, symlink mode) and `SyncEngine.convertMode(...)` do the on-disk work;
-  switching to copies is deliberately left to each server's next join, where the
-  pull detaches that one server's link — materialising every group at once could
-  mean hundreds of MB on the render thread. Before linking, pending dirty markers
-  are published (`recoverDirtyMarkers`) so a crashed copy-mode session's newest
-  data is not hidden behind the group copy. Conversion never deletes a source:
-  real+link→link moves the local folder into `_backups/` when both sides have
-  data (the user's picker of "which side wins" does not exist, so nothing is
-  discarded), and link→copy deletes only the link, then copies sync out.
+- **A mode switch is a conversion, not a flag.** `SyncGroupsMod.reconcileSyncMode()`
+  (startup, and after a settings change) and `SyncEngine.convertMode(...)` do the
+  on-disk work; the conversion runs on a background thread because materialising a
+  group back into copies can mean hundreds of MB (Bobby regions, DH databases) and
+  must not stall the loading screen. It is serialised with the join pull via
+  `SyncEngine.fsLock`, held per (server, root) so a join never waits behind an
+  unrelated server's conversion. While a session is open the mode is only saved —
+  the conversion waits for the next launch, because the mods have their storage in
+  use. Before converting, pending dirty markers are published
+  (`recoverDirtyMarkers`) so a crashed copy-mode session's newest data is not
+  hidden behind the group copy. Conversion never deletes a source: real+link→link
+  moves the local folder into `_backups/` when both sides have data (there is no
+  "which side wins" picker, so nothing is discarded) unless
+  `DirOps.sameContent` shows it is byte-identical to the group folder, in which
+  case it is left to be replaced by the link; link→copy deletes only the link,
+  then copies sync out.
+- **Only copy mode writes dirty markers.** A marker means "this session may have
+  left local data unpushed", so in symlink mode there is nothing to push and a
+  marker would only mislead a later conversion into publishing a server's copy
+  over the group. A mod with any non-symlinked root (Litematica's per-server
+  json) still gets one. `handleDirtyMarker` decides on the *physical* state
+  (is this path a link?) rather than on the configured mode, so a marker from a
+  crashed copy-mode session is still published after a switch.
 - **`DirOps.overlaps` is the last line of defence against a self-copy.** If a
   local path is a symlink into the group folder, source and target are the same
   directory; `copyTree` would `deleteTree(to)` and destroy the source before the

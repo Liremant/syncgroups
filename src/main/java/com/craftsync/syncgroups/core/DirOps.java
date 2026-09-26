@@ -6,6 +6,8 @@ import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.Comparator;
+import java.util.Map;
+import java.util.TreeMap;
 import java.util.stream.Stream;
 
 /** Small recursive file ops used by the sync engine. */
@@ -108,6 +110,49 @@ public final class DirOps {
                 }
             }).sum();
         }
+    }
+
+    /**
+     * Conservative content comparison of two directory trees: same set of
+     * relative paths, and for every file the same size and modification time.
+     *
+     * Used to tell a redundant copy of the group folder from a folder holding
+     * something the group does not, so flipping the sync mode back and forth does
+     * not pile up {@code _backups} of identical data. Any doubt (unreadable file,
+     * a link anywhere in the tree) returns false — the caller then keeps the
+     * folder, which is always the safe direction.
+     */
+    public static boolean sameContent(Path a, Path b) {
+        if (Files.isSymbolicLink(a) || Files.isSymbolicLink(b)
+                || !Files.isDirectory(a) || !Files.isDirectory(b)) {
+            return false;
+        }
+        try {
+            return fingerprint(a).equals(fingerprint(b));
+        } catch (IOException | java.io.UncheckedIOException e) {
+            return false;
+        }
+    }
+
+    /** Relative path -> "dir", "link:<target>" or "<size>:<mtime>" for a whole tree. */
+    private static Map<String, String> fingerprint(Path root) throws IOException {
+        Map<String, String> out = new TreeMap<>();
+        try (Stream<Path> s = Files.walk(root)) {
+            for (Path p : (Iterable<Path>) s::iterator) {
+                if (p.equals(root)) {
+                    continue;
+                }
+                String rel = root.relativize(p).toString();
+                if (Files.isSymbolicLink(p)) {
+                    out.put(rel, "link:" + Files.readSymbolicLink(p));
+                } else if (Files.isDirectory(p)) {
+                    out.put(rel, "dir");
+                } else {
+                    out.put(rel, Files.size(p) + ":" + Files.getLastModifiedTime(p).toMillis());
+                }
+            }
+        }
+        return out;
     }
 
     // ------------------------------------------------------------- symlinks

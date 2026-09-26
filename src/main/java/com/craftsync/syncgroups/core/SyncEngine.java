@@ -247,7 +247,16 @@ public final class SyncEngine {
             }
         }
         for (ModSyncSpec spec : specs) {
-            writeMarker(group, spec.modId, serverKey, serverName);
+            // A dirty marker means "this session may have left local data unpushed".
+            // In symlink mode the local path IS the group folder, so there is nothing
+            // to push and the marker would only mislead a later mode conversion into
+            // publishing a server's copy over the group. A mod with any copied root
+            // (Litematica's per-server json) still needs one.
+            if (spec.roots.stream().anyMatch(r -> !useSymlinks(r))) {
+                writeMarker(group, spec.modId, serverKey, serverName);
+            } else {
+                Diag.info("PULL %s: fully symlinked — no dirty marker needed", spec.modId);
+            }
         }
         Diag.info("PULL: done for key='%s'", serverKey);
     }
@@ -478,6 +487,7 @@ public final class SyncEngine {
                         case "linked" -> linked++;
                         case "detached" -> detached++;
                         case "already" -> already++;
+                        case "none" -> { /* nothing on disk yet: not a skip, a no-op */ }
                         default -> skipped++;
                     }
                 }
@@ -504,7 +514,7 @@ public final class SyncEngine {
         Map<String, String> v = vars(serverKey, serverName);
         List<Path> existing = root.resolveExisting(gameDir, v);
         if (existing.isEmpty()) {
-            return "skip"; // nothing local yet — the next join creates the right shape
+            return "none"; // nothing local yet — the next join creates the right shape
         }
         Path local = existing.get(0);
         try {
@@ -530,11 +540,21 @@ public final class SyncEngine {
                     Diag.info("MODE %s: seeding group from %s", tag, local);
                     moveContentIn(local, sync);
                 } else if (DirOps.existsAndNonEmpty(local)) {
-                    // Both sides have data and they may differ. Never pick a winner
-                    // silently: keep the local copy in _backups.
-                    Path backup = backupDir(group.id, serverKey, spec.modId, root);
-                    Diag.warn("MODE %s: group already has data — local %s moved to %s", tag, local, backup);
-                    DirOps.moveTree(local, backup);
+                    if (DirOps.sameContent(local, sync)) {
+                        // The local folder is exactly the group's data (typically the copy
+                        // a previous switch to copy mode materialised). Nothing is lost by
+                        // discarding it, so skip the backup — otherwise every flip leaves
+                        // another copy in _backups. replaceWithRelativeSymlink stashes and
+                        // restores it if the link cannot be created.
+                        Diag.info("MODE %s: %s is an identical copy of the group folder — "
+                                + "not backing it up", tag, local);
+                    } else {
+                        // Both sides have data and they differ. Never pick a winner
+                        // silently: keep the local copy in _backups.
+                        Path backup = backupDir(group.id, serverKey, spec.modId, root);
+                        Diag.warn("MODE %s: group already has data — local %s moved to %s", tag, local, backup);
+                        DirOps.moveTree(local, backup);
+                    }
                 }
                 DirOps.replaceWithRelativeSymlink(local, sync);
                 // Nothing left to recover once the local path IS the group folder.
