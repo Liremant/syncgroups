@@ -38,6 +38,15 @@ public final class SyncEngine {
 
     private static final String MARKER_PREFIX = ".active_";
 
+    /**
+     * Guards folder moves: the mode conversion (background thread) and the join
+     * pull (render/netty thread) can touch the same local path, and a copy that
+     * starts while another thread is moving that folder is how data gets lost.
+     * Held per (server, root) unit of work, not for a whole group, so a join is
+     * never stuck behind a long conversion of an unrelated server.
+     */
+    private final Object fsLock = new Object();
+
     public final Path gameDir;
     public final Path rootDir;
     private final PathsConfig config;
@@ -66,6 +75,9 @@ public final class SyncEngine {
         g.color = String.format("#%06X", color & 0xFFFFFF);
         g.createdAt = Instant.now().getEpochSecond();
         g.servers.addAll(serverKeys);
+        if (serverNames != null) {
+            serverNames.forEach(g::rememberName);
+        }
         store.add(g); // throws if a server is already grouped
         for (ModSyncSpec spec : activeSpecs()) {
             for (ModSyncSpec.Root root : spec.roots) {
@@ -73,8 +85,9 @@ public final class SyncEngine {
             }
         }
         for (String server : serverKeys) {
-            addServerToGroup(g, server, serverNames.get(server));
+            addServerToGroup(g, server, serverNames == null ? null : serverNames.get(server));
         }
+        store.update(g);
         return g;
     }
 
@@ -87,6 +100,7 @@ public final class SyncEngine {
 
     /** Spec §4.2. In symlink mode this links instead of copying. */
     public void addServerToGroup(Group group, String serverKey, String serverName) throws IOException {
+        group.rememberName(serverKey, serverName);
         Map<String, String> v = vars(serverKey, serverName);
         for (ModSyncSpec spec : activeSpecs()) {
             for (ModSyncSpec.Root root : spec.roots) {
@@ -128,8 +142,14 @@ public final class SyncEngine {
 
     // ------------------------------------------------------------------ join
 
-    /** Spec §4.3 + §7 recovery-before-pull. */
+    /** Spec §4.3 + §7 recovery-before-pull. Serialised with the mode conversion. */
     public void pullForJoin(Group group, String serverKey, String serverName) throws IOException {
+        synchronized (fsLock) {
+            pullForJoinLocked(group, serverKey, serverName);
+        }
+    }
+
+    private void pullForJoinLocked(Group group, String serverKey, String serverName) throws IOException {
         Diag.info("PULL: group='%s' key='%s' name='%s' mode=%s",
                 group.tag, serverKey, serverName, config.symlinkMode() ? "symlink" : "copy");
         recoverDirtyMarkers(group);
@@ -167,6 +187,18 @@ public final class SyncEngine {
                     continue;
                 }
 
+                // A leftover link while the mode is "copy" (the user flipped the switch
+                // mid-session, so the startup conversion could not run): detach it here,
+                // otherwise the pull silently keeps the link and the switch never takes
+                // effect for this server. Detaching is safe when the link is ours — its
+                // target is the group folder, so even an empty one loses nothing.
+                Path local = root.resolvePrimary(gameDir, v);
+                if (DirOps.isSymlink(local)
+                        && (DirOps.linksTo(local, sync) || DirOps.existsAndNonEmpty(sync))) {
+                    Diag.warn("PULL %s: %s is a leftover symlink while mode=copy — detaching", tag, local);
+                    DirOps.deleteTree(local); // link only, never the target
+                }
+
                 if (!DirOps.existsAndNonEmpty(sync)) {
                     Diag.info("PULL %s: sync copy is empty — first join for this mod, skipping", tag);
                     continue;
@@ -187,7 +219,6 @@ public final class SyncEngine {
                         }
                     }
                 } else {
-                    Path local = root.resolvePrimary(gameDir, v);
                     List<Path> existing = root.resolveExisting(gameDir, v);
                     Diag.info("PULL %s: local=%s existing=%d", tag, local, existing.size());
                     for (Path e : existing) {
@@ -257,6 +288,15 @@ public final class SyncEngine {
                 }
                 for (Path entry : local) {
                     Diag.info("PUSH %s: source %s", tag, Diag.describe(entry));
+                    Path sync = syncDir(group.id, spec.modId, root);
+                    if (DirOps.isSymlink(entry)
+                            && (DirOps.linksTo(entry, sync) || DirOps.sameLocation(entry, sync))) {
+                        // Leftover link from a mode switch made mid-session: the entry IS
+                        // the group folder, so "copying" it would target itself. The
+                        // switch is applied per server on the next join — never here.
+                        Diag.warn("PUSH %s: %s is a symlink into the group folder — skipping", tag, entry);
+                        continue;
+                    }
                     boolean waiting = !spec.closeWait.equals("none");
                     if (waiting) {
                         // Mods that write on teardown (Xaero flushes world-map regions
@@ -278,7 +318,6 @@ public final class SyncEngine {
                         allOk = false;
                         continue;
                     }
-                    Path sync = syncDir(group.id, spec.modId, root);
                     copyLocalIntoSync(entry, sync, root);
                     Diag.info("PUSH %s: %s -> %s", tag, entry, Diag.describe(sync));
                     Diag.tree("PUSH " + tag + " sync", sync, 2);
@@ -323,14 +362,24 @@ public final class SyncEngine {
         if (spec == null) {
             return;
         }
+        // Marker first (written at pull time), then the name remembered in
+        // groups.json — the marker is the fresher of the two when both exist.
         String serverName = readMarkerName(marker);
+        if (serverName == null || serverName.isBlank()) {
+            serverName = group.nameOf(serverKey);
+        }
         boolean anyData = false;
         boolean needsRecovery = false;
         for (ModSyncSpec.Root root : spec.roots) {
-            if (useSymlinks(root)) {
+            // Decide on the *physical* state, not on the configured mode: after a
+            // mode switch the flag and the layout disagree, and a marker left by a
+            // crashed copy-mode session must still be published even though the
+            // current mode is symlink.
+            if ("dir".equals(root.mode)
+                    && DirOps.isSymlink(root.resolvePrimary(gameDir, vars(serverKey, serverName)))) {
                 // The local path IS the group folder, so a crash cannot have left
                 // anything unpublished — just drop the marker.
-                Diag.info("RECOVERY %s/%s: symlink mode, nothing to recover for key='%s'",
+                Diag.info("RECOVERY %s/%s: local path is a link into the group, nothing to recover for key='%s'",
                         modId, root.syncName(), serverKey);
                 continue;
             }
@@ -360,6 +409,169 @@ public final class SyncEngine {
         }
     }
 
+    // -------------------------------------------------------------- mode switch
+
+    /**
+     * Converts the local per-server data of every grouped server between the
+     * copy and symlink layouts (spec §4.5), to match {@code syncMode}.
+     *
+     * Switching {@code syncMode} only changes what future joins/pushes do, so
+     * without this an install ends up with a mix of links and real folders, and
+     * the switch is not reversible by flipping the flag back: a local path that
+     * is a link looks like "no local data" to copy-mode logic, and the data the
+     * user had before the switch is never materialised. This makes the switch
+     * explicit, idempotent, and never destructive.
+     *
+     * Must not run while a session is open (mods hold their storage): the caller
+     * checks that and defers the conversion to the next launch.
+     *
+     * @return human-readable summary for the log/UI
+     */
+    public String convertMode(Group group) {
+        boolean toSymlink = config.symlinkMode();
+        int linked = 0;
+        int detached = 0;
+        int already = 0;
+        int skipped = 0;
+        Diag.info("MODE: converting group '%s' (%s) to %s", group.tag, group.id,
+                toSymlink ? "symlink" : "copy");
+        for (ModSyncSpec spec : activeSpecs()) {
+            for (ModSyncSpec.Root root : spec.roots) {
+                String tag = spec.modId + "/" + root.syncName();
+                if (!"dir".equals(root.mode)) {
+                    // Per-file (prefix) roots are never linked, in either mode.
+                    continue;
+                }
+                Path sync;
+                try {
+                    sync = syncDir(group.id, spec.modId, root);
+                } catch (IOException e) {
+                    Diag.error("MODE: cannot resolve sync dir for " + tag, e);
+                    skipped++;
+                    continue;
+                }
+                for (String serverKey : group.servers) {
+                    if (config.symlinkMode() != toSymlink) {
+                        // Someone flipped the switch again while we were working. Stop
+                        // instead of finishing in a direction nobody asked for; the
+                        // next reconcile (startup or settings) finishes the job.
+                        Diag.warn("MODE: syncMode changed mid-conversion — stopping at %s", tag);
+                        return summaryFor(toSymlink, linked, detached, already, skipped);
+                    }
+                    String serverName = group.nameOf(serverKey);
+                    if (serverName == null && root.pattern != null && root.pattern.contains("{name}")) {
+                        // Distant Horizons and friends: without the name there is no
+                        // path to convert. It will be adopted on that server's next join.
+                        Diag.warn("MODE %s: no remembered name for key='%s' — skipped (will convert on its next join)",
+                                tag, serverKey);
+                        skipped++;
+                        continue;
+                    }
+                    String status;
+                    // Serialised against the join pull: both may move the same folders,
+                    // and the unit of work here is one (server, root) pair so a join to
+                    // another server never waits for a long conversion.
+                    synchronized (fsLock) {
+                        status = convertOne(group, spec, root, serverKey, serverName, sync, toSymlink);
+                    }
+                    switch (status) {
+                        case "linked" -> linked++;
+                        case "detached" -> detached++;
+                        case "already" -> already++;
+                        default -> skipped++;
+                    }
+                }
+            }
+        }
+        String summary = summaryFor(toSymlink, linked, detached, already, skipped);
+        Diag.info("MODE: done for group '%s': %s", group.tag, summary);
+        return summary;
+    }
+
+    private static String summaryFor(boolean toSymlink, int linked, int detached, int already, int skipped) {
+        return (toSymlink ? linked + " linked, " : detached + " detached, ")
+                + already + " already correct, " + skipped + " skipped";
+    }
+
+    /**
+     * Converts one (server, root) pair. Returns "linked", "detached", "already"
+     * or "skipped". Caller holds {@link #fsLock}.
+     */
+    private String convertOne(Group group, ModSyncSpec spec, ModSyncSpec.Root root,
+                              String serverKey, String serverName, Path sync, boolean toSymlink) {
+        String tag = spec.modId + "/" + root.syncName();
+        String key = "key='" + serverKey + "'";
+        Map<String, String> v = vars(serverKey, serverName);
+        List<Path> existing = root.resolveExisting(gameDir, v);
+        if (existing.isEmpty()) {
+            return "skip"; // nothing local yet — the next join creates the right shape
+        }
+        Path local = existing.get(0);
+        try {
+            if (toSymlink) {
+                if (DirOps.linksTo(local, sync)) {
+                    return "already";
+                }
+                if (DirOps.isSymlink(local)) {
+                    Diag.warn("MODE %s: %s is a link to somewhere else — left untouched", tag, local);
+                    return "skip";
+                }
+                if (Files.exists(markerPath(group.id, spec.modId, serverKey))) {
+                    // A crashed session left unpublished local data: it is the newest
+                    // copy, so publish it before shadowing the folder with a link.
+                    // Backing it up instead would silently show stale group data on
+                    // the next join.
+                    Diag.warn("MODE %s: unfinished session for %s — publishing local data into "
+                            + "the group before linking", tag, key);
+                    copyLocalIntoSync(local, sync, root);
+                } else if (!DirOps.existsAndNonEmpty(sync)) {
+                    // Group has no data yet: the local folder IS the reference set, so
+                    // move its content in rather than shadowing it.
+                    Diag.info("MODE %s: seeding group from %s", tag, local);
+                    moveContentIn(local, sync);
+                } else if (DirOps.existsAndNonEmpty(local)) {
+                    // Both sides have data and they may differ. Never pick a winner
+                    // silently: keep the local copy in _backups.
+                    Path backup = backupDir(group.id, serverKey, spec.modId, root);
+                    Diag.warn("MODE %s: group already has data — local %s moved to %s", tag, local, backup);
+                    DirOps.moveTree(local, backup);
+                }
+                DirOps.replaceWithRelativeSymlink(local, sync);
+                // Nothing left to recover once the local path IS the group folder.
+                quietDelete(markerPath(group.id, spec.modId, serverKey));
+                Diag.info("MODE %s: linked %s -> %s", tag, local, sync);
+                return "linked";
+            }
+
+            if (!DirOps.isSymlink(local)) {
+                return "already";
+            }
+            boolean groupHasData = DirOps.existsAndNonEmpty(sync);
+            if (!groupHasData && !DirOps.linksTo(local, sync)) {
+                // A link to somewhere else with an empty group folder: removing it
+                // would lose the only pointer to that data.
+                Diag.warn("MODE %s: %s is a link to another location and the group folder is "
+                        + "empty — not detaching", tag, local);
+                return "skip";
+            }
+            DirOps.deleteTree(local); // link only, never the target
+            if (groupHasData) {
+                DirOps.copyTree(sync, local);
+                Diag.info("MODE %s: detached %s from the group link", tag, local);
+            } else {
+                // Our own link into an empty group folder: there is nothing to
+                // materialise, but the link still has to go, otherwise copy mode
+                // keeps behaving like symlink mode for this root.
+                Files.createDirectories(local);
+                Diag.info("MODE %s: detached %s (group folder was empty)", tag, local);
+            }
+            return "detached";
+        } catch (IOException e) {
+            Diag.error("MODE %s: conversion failed for " + key, e);
+            return "skip";
+        }
+    }
+
     // -------------------------------------------------------------- dissolve
 
     /** Spec §6: never delete group data silently — move to _dissolved. */
@@ -375,14 +587,16 @@ public final class SyncEngine {
 
     /** Spec §6: removing a server that leaves ≤1 participant dissolves the group. */
     public boolean removeServer(Group group, String serverKey, GroupsStore store) throws IOException {
+        // Snapshot before mutating: the server being removed also has a link into
+        // the group folder, and that folder is about to move to _dissolved — leaving
+        // its link dangling in the mod's data directory.
+        List<String> all = new ArrayList<>(group.servers);
         group.servers.remove(serverKey);
         boolean dissolved = group.servers.size() <= 1;
         if (dissolved) {
-            // Whoever is left keeps their linked folder pointing into a group that
-            // is about to move — turn the link back into a real directory first.
-            if (config.symlinkMode()) {
-                detachLinks(group, group.servers);
-            }
+            // Everyone still pointing into the group folder (the removed server
+            // included) needs a real directory before that folder moves away.
+            materializeLinks(group, all);
             dissolve(group, store);
         } else {
             store.update(group);
@@ -390,21 +604,34 @@ public final class SyncEngine {
         return dissolved;
     }
 
-    /** Replaces group symlinks with real directories holding the shared data. */
-    private void detachLinks(Group group, List<String> keep) {
+    /**
+     * Replaces group symlinks with real directories holding the shared data.
+     * Runs regardless of the current {@code syncMode}: what matters is whether
+     * the local path is *actually* a link into the group folder, because that
+     * folder is about to be moved away. Relying on the mode flag here used to
+     * leave dangling links (and with them, the only copy of the data) behind
+     * after a mode switch.
+     */
+    private void materializeLinks(Group group, List<String> keep) {
         for (String serverKey : keep) {
             for (ModSyncSpec spec : activeSpecs()) {
                 for (ModSyncSpec.Root root : spec.roots) {
-                    if (!useSymlinks(root)) {
+                    if (!"dir".equals(root.mode)) {
                         continue;
                     }
                     try {
-                        List<Path> existing = root.resolveExisting(gameDir, vars(serverKey, null));
+                        List<Path> existing = root.resolveExisting(gameDir,
+                                vars(serverKey, group.nameOf(serverKey)));
                         if (existing.isEmpty() || !DirOps.isSymlink(existing.get(0))) {
                             continue;
                         }
                         Path local = existing.get(0);
                         Path sync = syncDir(group.id, spec.modId, root);
+                        if (!DirOps.existsAndNonEmpty(sync)) {
+                            Diag.warn("DISSOLVE %s: %s is a link into an empty group folder — "
+                                    + "leaving the link so nothing is lost", spec.modId, local);
+                            continue;
+                        }
                         DirOps.deleteTree(local);
                         DirOps.copyTree(sync, local);
                         Diag.info("DISSOLVE: %s detached from group link for key='%s'",

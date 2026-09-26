@@ -39,9 +39,22 @@ public final class GroupsStore {
         }
         try {
             Root parsed = GSON.fromJson(Files.readString(file), Root.class);
-            if (parsed != null) {
+            if (parsed != null && parsed.groups != null) {
                 root.groups.clear();
                 root.groups.addAll(parsed.groups);
+            }
+            // Fields added after 0.3.0 may be absent (or explicitly null) in an
+            // existing file. Normalising here keeps every reader free of null checks.
+            for (Group g : root.groups) {
+                if (g.servers == null) {
+                    g.servers = new ArrayList<>();
+                }
+                if (g.names == null) {
+                    g.names = new java.util.LinkedHashMap<>();
+                }
+                if (g.color == null || !g.color.matches("#[0-9a-fA-F]{6}")) {
+                    g.color = "#55FFAA";
+                }
             }
         } catch (Exception e) {
             // A corrupt groups.json must not silently wipe group metadata.

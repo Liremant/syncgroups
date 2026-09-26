@@ -15,6 +15,8 @@ import net.minecraft.network.chat.Component;
 public class ConfigScreen extends Screen {
 
     private final Screen parent;
+    /** Result of the last mode switch, shown under the button. */
+    private Component status;
 
     public ConfigScreen(Screen parent) {
         super(Component.translatable("syncgroups.config.title"));
@@ -42,9 +44,11 @@ public class ConfigScreen extends Screen {
         y += gap;
 
         addRenderableWidget(Button.builder(modeLabel(cfg), b -> {
-            cfg.syncMode = cfg.symlinkMode() ? "copy" : "symlink";
+            String outcome = SyncGroupsMod.applySyncMode(!cfg.symlinkMode());
             b.setMessage(modeLabel(cfg));
-            SyncGroupsMod.saveConfig();
+            // Say what actually happened: folders linked now, or the switch is
+            // recorded and applied later (next launch / next join).
+            status = Component.translatable("syncgroups.config.mode." + outcome);
         }).bounds(cx, y, w, h).build());
         y += gap;
 
@@ -104,6 +108,9 @@ public class ConfigScreen extends Screen {
     public void extractRenderState(GuiGraphicsExtractor g, int mouseX, int mouseY, float partialTick) {
         super.extractRenderState(g, mouseX, mouseY, partialTick);
         g.centeredText(font, title, width / 2, 16, 0xFFFFFF);
+        if (status != null) {
+            g.centeredText(font, status, width / 2, 122, 0xE0C060);
+        }
         g.centeredText(font, Component.translatable("syncgroups.config.hint"), width / 2, height - 46, 0x909090);
     }
 

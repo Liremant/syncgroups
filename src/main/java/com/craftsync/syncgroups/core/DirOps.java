@@ -26,6 +26,13 @@ public final class DirOps {
     }
 
     public static void copyTree(Path from, Path to) throws IOException {
+        // Last line of defence against a self-copy. Without this, a local path that
+        // is a symlink into the group folder makes source and target the same
+        // directory, and the deleteTree(to) below would destroy the source before
+        // the walk even starts — silent, total loss of that mod's data.
+        if (overlaps(from, to)) {
+            throw new IOException("refusing to copy " + from + " onto itself (" + to + ")");
+        }
         if (Files.isRegularFile(from)) {
             // Single-file copy (e.g. Litematica's litematica_<server>.json) —
             // 'to' IS the file, not a directory to put it into.
@@ -165,7 +172,8 @@ public final class DirOps {
     }
 
     /** True when {@code link} is already a symlink pointing at {@code target}. */
-    public static boolean linksTo(Path link, Path target) {        if (!Files.isSymbolicLink(link)) {
+    public static boolean linksTo(Path link, Path target) {
+        if (!Files.isSymbolicLink(link)) {
             return false;
         }
         try {
@@ -175,6 +183,41 @@ public final class DirOps {
         } catch (IOException e) {
             return false;
         }
+    }
+
+    // ------------------------------------------------------------- locations
+
+    /** True when both paths name the same existing file/directory, or the same string. */
+    public static boolean sameLocation(Path a, Path b) {
+        if (a == null || b == null) {
+            return false;
+        }
+        Path na = a.toAbsolutePath().normalize();
+        Path nb = b.toAbsolutePath().normalize();
+        if (na.equals(nb)) {
+            return true;
+        }
+        try {
+            // Catches the case where the paths differ as strings but one is a link
+            // to the other (the normal state in symlink mode).
+            return Files.exists(na) && Files.exists(nb) && Files.isSameFile(na, nb);
+        } catch (IOException e) {
+            return false;
+        }
+    }
+
+    /**
+     * True when copying {@code from} to {@code to} would read and write the same
+     * tree: either the same location, or one nested inside the other. Used to
+     * refuse copies that would delete their own source.
+     */
+    public static boolean overlaps(Path from, Path to) {
+        if (sameLocation(from, to)) {
+            return true;
+        }
+        Path na = from.toAbsolutePath().normalize();
+        Path nb = to.toAbsolutePath().normalize();
+        return na.startsWith(nb) || nb.startsWith(na);
     }
 
     public static final class UncheckedIOException extends RuntimeException {

@@ -24,6 +24,8 @@ public final class SessionManager {
     private long lastPushAt;
     private boolean pullDone;
     private volatile Thread pushThread;
+    /** Serialises pushes: the periodic one and the disconnect one must not overlap on the same files. */
+    private final Object pushLock = new Object();
 
     public SessionManager(SyncEngine engine, GroupsStore store, long periodicPushMs) {
         this.engine = engine;
@@ -37,6 +39,11 @@ public final class SessionManager {
 
     public boolean pullDone() {
         return pullDone;
+    }
+
+    /** True while the player is on a grouped server — conversion must not run then. */
+    public synchronized boolean sessionActive() {
+        return currentGroup != null;
     }
 
     /** Called before connecting (ConnectScreen) or at INIT as a fallback. */
@@ -75,6 +82,16 @@ public final class SessionManager {
         currentServerName = serverName;
         lastPushAt = System.currentTimeMillis();
         pullDone = true;
+        // Keep the name on record: name-keyed mods (Distant Horizons) and crash
+        // recovery need it for servers that are not the current session.
+        if (group.get().rememberName(key, serverName)) {
+            try {
+                store.update(group.get());
+                Diag.info("JOIN: remembered server name '%s' for key='%s'", serverName, key);
+            } catch (IOException e) {
+                Diag.error("JOIN: could not persist server name for key=" + key, e);
+            }
+        }
         Diag.info("JOIN: pull finished in %d ms for group '%s'",
                 System.currentTimeMillis() - start, group.get().tag);
         return true;
@@ -102,10 +119,12 @@ public final class SessionManager {
         lastPushAt = System.currentTimeMillis();
         Diag.info("PUSH(periodic): starting for key='%s' group='%s'", key, group.tag);
         runAsync(() -> {
-            try {
-                engine.push(group, key, name, false);
-            } catch (Exception e) {
-                Diag.error("PUSH(periodic): failed for key=" + key, e);
+            synchronized (pushLock) {
+                try {
+                    engine.push(group, key, name, false);
+                } catch (Exception e) {
+                    Diag.error("PUSH(periodic): failed for key=" + key, e);
+                }
             }
         });
     }
@@ -125,11 +144,13 @@ public final class SessionManager {
         pullDone = false;
         Diag.info("DISCONNECT: pushing for key='%s' group='%s'", key, group.tag);
         runAsync(() -> {
-            try {
-                boolean ok = engine.push(group, key, name, true);
-                Diag.info("DISCONNECT: push %s for group '%s'", ok ? "ok" : "partial", group.tag);
-            } catch (Exception e) {
-                Diag.error("DISCONNECT: push failed for key=" + key, e);
+            synchronized (pushLock) {
+                try {
+                    boolean ok = engine.push(group, key, name, true);
+                    Diag.info("DISCONNECT: push %s for group '%s'", ok ? "ok" : "partial", group.tag);
+                } catch (Exception e) {
+                    Diag.error("DISCONNECT: push failed for key=" + key, e);
+                }
             }
         });
     }

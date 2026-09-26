@@ -30,6 +30,8 @@ public class SyncGroupsMod implements ClientModInitializer {
     private static SessionManager session;
     /** Set when INIT could not resolve the target server; retried on the next tick. */
     private static volatile boolean pendingPull;
+    /** Background sync-mode conversion, joined on shutdown so a switch is not cut in half. */
+    private static volatile Thread modeThread;
 
     public static PathsConfig config() {
         return config;
@@ -139,10 +141,78 @@ public class SyncGroupsMod implements ClientModInitializer {
             session.tick();
         });
 
-        Runtime.getRuntime().addShutdownHook(new Thread(
-                () -> session.awaitPendingPush(5000), "syncgroups-shutdown"));
+        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+            session.awaitPendingPush(5000);
+            awaitModeConversion(5000);
+        }, "syncgroups-shutdown"));
+
+        // Bring the on-disk layout in line with the configured mode (spec §4.5).
+        // Idempotent, and it repairs leftovers from a switch made mid-session.
+        // Off the render thread: materialising a group back into copies can mean
+        // hundreds of MB (Bobby regions, Distant Horizons databases) and must not
+        // stall the loading screen. A join that races it waits on the engine's
+        // per-folder lock, which is bounded by one server's data.
+        reconcileSyncModeAsync();
 
         Diag.info("READY: Sync Groups initialized with %d group(s)", store.all().size());
+    }
+
+    private static void reconcileSyncModeAsync() {
+        Thread t = new Thread(SyncGroupsMod::reconcileSyncMode, "syncgroups-mode-convert");
+        t.setDaemon(true);
+        modeThread = t;
+        t.start();
+    }
+
+    /**
+     * Makes every group's folders match {@code syncMode}. Runs off the render
+     * thread (startup and settings changes); the join pull is serialised with it.
+     */
+    private static void reconcileSyncMode() {
+        boolean symlink = config.symlinkMode();
+        for (com.craftsync.syncgroups.core.Group g : store.all()) {
+            // Publish whatever a crashed session left behind *before* converting:
+            // in symlink mode the local folder is about to be shadowed by a link,
+            // and in copy mode the group copy may be the stale one.
+            engine.recoverDirtyMarkers(g);
+            String summary = engine.convertMode(g);
+            Diag.info("MODE: group '%s' -> %s (%s)", g.tag, symlink ? "symlink" : "copy", summary);
+        }
+        Diag.info("MODE: conversion to %s finished", symlink ? "symlink" : "copy");
+    }
+
+    /** Best-effort: let an in-flight mode conversion finish before the JVM exits. */
+    private static void awaitModeConversion(long timeoutMs) {
+        Thread t = modeThread;
+        if (t == null || !t.isAlive()) {
+            return;
+        }
+        Diag.info("SHUTDOWN: waiting up to %d ms for the mode conversion", timeoutMs);
+        try {
+            t.join(timeoutMs);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+    }
+
+    /**
+     * Applies a sync-mode change from the settings screen: persist it, then
+     * convert the existing folders. While a session is open the mods have their
+     * storage in use, so the change is only recorded and the conversion happens
+     * on the next launch instead of moving folders under a running mod.
+     *
+     * @return which message to show: "applied.symlink", "applied.copy" or "deferred"
+     */
+    public static String applySyncMode(boolean symlink) {
+        config.syncMode = symlink ? "symlink" : "copy";
+        saveConfig();
+        if (session.sessionActive()) {
+            Diag.warn("MODE: switched to %s while a session is open — existing folders will be "
+                    + "converted on the next game launch", config.syncMode);
+            return "deferred";
+        }
+        reconcileSyncModeAsync();
+        return symlink ? "applied.symlink" : "applied.copy";
     }
 
     /**
