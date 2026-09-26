@@ -20,5 +20,6 @@
   "syncgroups.config.on": "shown",
   "syncgroups.config.off": "hidden",
   "syncgroups.config.openFolder": "Open data folder",
-  "syncgroups.config.hint": "Symlinks need Developer Mode or admin rights on Windows"
+  "syncgroups.config.hint": "Symlinks need Developer Mode or admin rights on Windows",
+  "syncgroups.create.color": "Tag color"
 }

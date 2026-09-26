@@ -27,6 +27,9 @@ public class CreateGroupScreen extends Screen {
 
     private static final int PICKER_W = 220;
     private static final int PICKER_H = 140;
+    /** Gap between the picker block and the tag/button column. */
+    private static final int COLUMN_GAP = 26;
+    private static final int COLUMN_W = 130;
 
     private final Screen parent;     // cancel goes here (the wizard's previous step)
     private final Screen doneScreen; // successful create goes here (the server list)
@@ -47,26 +50,30 @@ public class CreateGroupScreen extends Screen {
 
     @Override
     protected void init() {
-        int x0 = width / 2 - 170;
         if (picker != null) {
             initialColor = picker.colorInt();
         }
+        // Centre the whole block (picker + tag column) and keep it on screen: at
+        // small window sizes the old fixed offset pushed the tag field and the
+        // buttons past the right edge.
+        int total = ColorPicker.layoutWidth(PICKER_W) + COLUMN_GAP + COLUMN_W;
+        int x0 = Math.max(8, (width - total) / 2);
         picker = new ColorPicker(x0, 50, PICKER_W, PICKER_H, initialColor);
 
-        int rx = x0 + PICKER_W + 50;
+        int rx = x0 + ColorPicker.layoutWidth(PICKER_W) + COLUMN_GAP;
 
-        tagBox = new EditBox(font, rx, 70, 130, 20, Component.translatable("syncgroups.create.tag"));
+        tagBox = new EditBox(font, rx, 70, COLUMN_W, 20, Component.translatable("syncgroups.create.tag"));
         tagBox.setMaxLength(16);
         addRenderableWidget(tagBox);
 
         Button create = Button.builder(Component.translatable("syncgroups.create.confirm"), b -> onCreate())
-                .bounds(rx, 110, 130, 20)
+                .bounds(rx, 110, COLUMN_W, 20)
                 .build();
         create.active = false;
         tagBox.setResponder(s -> create.active = !s.isBlank());
         addRenderableWidget(create);
         addRenderableWidget(Button.builder(Component.translatable("gui.cancel"), b -> onClose())
-                .bounds(rx, 136, 130, 20)
+                .bounds(rx, 136, COLUMN_W, 20)
                 .build());
     }
 
@@ -97,10 +104,15 @@ public class CreateGroupScreen extends Screen {
         super.extractRenderState(g, mouseX, mouseY, partialTick);
         g.centeredText(font, title, width / 2, 12, 0xFFFFFF);
         g.centeredText(font, Component.translatable("syncgroups.create.step"), width / 2, 26, 0x909090);
-        int x0 = width / 2 - 170;
-        int rx = x0 + PICKER_W + 50;
+        g.text(font, Component.translatable("syncgroups.create.color"), pickerX(), 40, 0xA0A0A0);
+        int rx = pickerX() + ColorPicker.layoutWidth(PICKER_W) + COLUMN_GAP;
         g.text(font, Component.translatable("syncgroups.create.tag"), rx, 60, 0xA0A0A0);
         picker.draw(g, font);
+    }
+
+    private int pickerX() {
+        int total = ColorPicker.layoutWidth(PICKER_W) + COLUMN_GAP + COLUMN_W;
+        return Math.max(8, (width - total) / 2);
     }
 
     @Override

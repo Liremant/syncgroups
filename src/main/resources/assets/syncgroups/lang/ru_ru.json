@@ -20,5 +20,6 @@
   "syncgroups.config.on": "показаны",
   "syncgroups.config.off": "скрыты",
   "syncgroups.config.openFolder": "Открыть папку данных",
-  "syncgroups.config.hint": "Симлинки в Windows требуют режима разработчика или прав админа"
+  "syncgroups.config.hint": "Симлинки в Windows требуют режима разработчика или прав админа",
+  "syncgroups.create.color": "Цвет метки"
 }
