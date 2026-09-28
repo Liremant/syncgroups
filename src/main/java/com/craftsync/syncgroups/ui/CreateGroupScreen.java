@@ -66,15 +66,17 @@ public class CreateGroupScreen extends Screen {
         tagBox.setMaxLength(16);
         addRenderableWidget(tagBox);
 
-        Button create = Button.builder(Component.translatable("syncgroups.create.confirm"), b -> onCreate())
+        // Cancel sits above Create: the primary action takes the bottom slot,
+        // matching vanilla screens where "Done"/"Create" is the last button.
+        addRenderableWidget(Button.builder(Component.translatable("gui.cancel"), b -> onClose())
                 .bounds(rx, 110, COLUMN_W, 20)
+                .build());
+        Button create = Button.builder(Component.translatable("syncgroups.create.confirm"), b -> onCreate())
+                .bounds(rx, 136, COLUMN_W, 20)
                 .build();
         create.active = false;
         tagBox.setResponder(s -> create.active = !s.isBlank());
         addRenderableWidget(create);
-        addRenderableWidget(Button.builder(Component.translatable("gui.cancel"), b -> onClose())
-                .bounds(rx, 136, COLUMN_W, 20)
-                .build());
     }
 
     private void onCreate() {

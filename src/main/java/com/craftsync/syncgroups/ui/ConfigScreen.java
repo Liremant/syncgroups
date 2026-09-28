@@ -4,6 +4,7 @@ import com.craftsync.syncgroups.SyncGroupsMod;
 import com.craftsync.syncgroups.integration.PathsConfig;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.gui.components.Tooltip;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 
@@ -40,7 +41,7 @@ public class ConfigScreen extends Screen {
             cfg.showGroupTags = !cfg.showGroupTags;
             b.setMessage(tagsLabel(cfg));
             SyncGroupsMod.saveConfig();
-        }).bounds(cx, y, w, h).build());
+        }).tooltip(tip("syncgroups.config.tags.tip")).bounds(cx, y, w, h).build());
         y += gap;
 
         addRenderableWidget(Button.builder(modeLabel(cfg), b -> {
@@ -49,7 +50,7 @@ public class ConfigScreen extends Screen {
             // Say what actually happened: folders linked now, or the switch is
             // recorded and applied later (next launch / next join).
             status = Component.translatable("syncgroups.config.mode." + outcome);
-        }).bounds(cx, y, w, h).build());
+        }).tooltip(tip("syncgroups.config.mode.tip")).bounds(cx, y, w, h).build());
         y += gap;
 
         addRenderableWidget(Button.builder(pushLabel(cfg), b -> {
@@ -62,7 +63,7 @@ public class ConfigScreen extends Screen {
             };
             b.setMessage(pushLabel(cfg));
             SyncGroupsMod.saveConfig();
-        }).bounds(cx, y, w, h).build());
+        }).tooltip(tip("syncgroups.config.push.tip")).bounds(cx, y, w, h).build());
         y += gap + 8;
 
         addRenderableWidget(Button.builder(Component.translatable("syncgroups.config.openFolder"), b -> {
@@ -73,16 +74,21 @@ public class ConfigScreen extends Screen {
             } catch (Exception e) {
                 SyncGroupsMod.LOGGER.warn("Could not open the syncgroups folder", e);
             }
-        }).bounds(cx, y, w, h).build());
+        }).tooltip(tip("syncgroups.config.openFolder.tip")).bounds(cx, y, w, h).build());
         y += gap;
 
-        addRenderableWidget(Button.builder(Component.translatable("syncgroups.manage.title"), b ->
+        addRenderableWidget(Button.builder(Component.translatable("syncgroups.config.manage"), b ->
                         minecraft.setScreenAndShow(new SyncGroupsScreen(this)))
-                .bounds(cx, y, w, h).build());
+                .tooltip(tip("syncgroups.config.manage.tip")).bounds(cx, y, w, h).build());
 
         addRenderableWidget(Button.builder(Component.translatable("gui.done"), b -> onClose())
                 .bounds(width / 2 - 100, height - 28, 200, 20)
                 .build());
+    }
+
+    /** Hover text for a settings button: the label stays short, the meaning lives here. */
+    private static Tooltip tip(String key) {
+        return Tooltip.create(Component.translatable(key));
     }
 
     private static Component tagsLabel(PathsConfig cfg) {
@@ -109,7 +115,9 @@ public class ConfigScreen extends Screen {
         super.extractRenderState(g, mouseX, mouseY, partialTick);
         g.centeredText(font, title, width / 2, 16, 0xFFFFFF);
         if (status != null) {
-            g.centeredText(font, status, width / 2, 122, 0xE0C060);
+            // Sits in the gap between the push button (ends at 116) and the
+            // folder button (starts at 130), so it never covers a control.
+            g.centeredText(font, status, width / 2, 118, 0xE0C060);
         }
         g.centeredText(font, Component.translatable("syncgroups.config.hint"), width / 2, height - 46, 0x909090);
     }
