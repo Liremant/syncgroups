@@ -7,6 +7,7 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.Comparator;
 import java.util.Map;
+import java.util.Set;
 import java.util.TreeMap;
 import java.util.stream.Stream;
 
@@ -113,14 +114,24 @@ public final class DirOps {
     }
 
     /**
+     * Directories that are never part of a mod's data and can be large enough to
+     * make a walk expensive. Skipping them keeps the comparison from reading a
+     * version-control or IDE tree that happens to sit inside the game dir.
+     */
+    private static final Set<String> SKIPPED_DIRS = Set.of(".git", ".gradle", "build", "node_modules", ".idea");
+
+    /**
      * Conservative content comparison of two directory trees: same set of
-     * relative paths, and for every file the same size and modification time.
+     * relative paths (excluding {@link #SKIPPED_DIRS}), and for every file the
+     * same size and modification time.
      *
      * Used to tell a redundant copy of the group folder from a folder holding
      * something the group does not, so flipping the sync mode back and forth does
-     * not pile up {@code _backups} of identical data. Any doubt (unreadable file,
-     * a link anywhere in the tree) returns false — the caller then keeps the
-     * folder, which is always the safe direction.
+     * not pile up {@code _backups} of identical data, and so a second adoption of
+     * the same data does not copy a whole map for nothing.
+     *
+     * Any doubt (unreadable file, a link anywhere in the tree) returns false —
+     * the caller then keeps the folder, which is always the safe direction.
      */
     public static boolean sameContent(Path a, Path b) {
         if (Files.isSymbolicLink(a) || Files.isSymbolicLink(b)
@@ -140,6 +151,10 @@ public final class DirOps {
         try (Stream<Path> s = Files.walk(root)) {
             for (Path p : (Iterable<Path>) s::iterator) {
                 if (p.equals(root)) {
+                    continue;
+                }
+                String name = p.getFileName().toString();
+                if (Files.isDirectory(p) && !Files.isSymbolicLink(p) && SKIPPED_DIRS.contains(name)) {
                     continue;
                 }
                 String rel = root.relativize(p).toString();

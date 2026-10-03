@@ -44,7 +44,12 @@ public class ServerEntryTagMixin {
         int textWidth = font.width(group.tag);
         int x = entry.getContentX() + 35 + font.width(serverData.name) + 6;
         int y = entry.getContentY() + 1;
+        // Clip to the entry: the tag is drawn after the name, so a long name plus a
+        // long tag used to spill over the player counter on the right edge.
+        g.enableScissor(entry.getContentX(), entry.getContentY(),
+                entry.getContentX() + entry.getContentWidth(), entry.getContentY() + 12);
         g.fill(x - 3, y - 2, x + textWidth + 3, y + 10, 0x90101010);
         g.text(font, group.tag, x, y, group.colorInt());
+        g.disableScissor();
     }
 }

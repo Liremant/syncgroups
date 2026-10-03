@@ -79,6 +79,10 @@ public final class GroupsStore {
         return root.groups.stream().filter(g -> id.equals(g.id)).findFirst();
     }
 
+    public synchronized boolean contains(String id) {
+        return root.groups.stream().anyMatch(g -> id.equals(g.id));
+    }
+
     public synchronized void add(Group group) throws IOException {
         // Invariant: no server may appear in two groups.
         for (String server : group.servers) {
@@ -96,6 +100,21 @@ public final class GroupsStore {
     }
 
     public synchronized void update(Group group) throws IOException {
+        // Accept a detached copy as well as the live object: callers that add a
+        // group mid-way (createGroup) then work on a snapshot so a concurrent
+        // settings change cannot make them write into an object no longer in the
+        // list, silently dropping the change from groups.json.
+        int idx = -1;
+        for (int i = 0; i < root.groups.size(); i++) {
+            if (root.groups.get(i).id.equals(group.id)) {
+                idx = i;
+                break;
+            }
+        }
+        if (idx < 0) {
+            throw new IOException("group " + group.id + " is not in the store");
+        }
+        root.groups.set(idx, group);
         save();
     }
 }

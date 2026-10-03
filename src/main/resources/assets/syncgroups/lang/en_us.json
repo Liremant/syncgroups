@@ -10,6 +10,7 @@
   "syncgroups.create.step": "Step 2 of 2 — tag and color",
   "syncgroups.create.tag": "Tag (max 16 chars)",
   "syncgroups.create.confirm": "Create",
+  "syncgroups.create.failed": "Could not create the group: %s",
 
   "syncgroups.config.title": "Sync Groups settings",
   "syncgroups.config.tags": "Group tags: %s",

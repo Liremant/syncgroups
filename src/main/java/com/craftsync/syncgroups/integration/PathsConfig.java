@@ -53,7 +53,8 @@ public final class PathsConfig {
         return "symlink".equalsIgnoreCase(syncMode);
     }
 
-    public static PathsConfig loadOrCreate(Path file) {        PathsConfig config = null;
+    public static PathsConfig loadOrCreate(Path file) {
+        PathsConfig config = null;
         boolean stale = false;
 
         if (Files.exists(file)) {
@@ -68,6 +69,16 @@ public final class PathsConfig {
             }
         }
 
+        // Save the user's own values, not the v2 defaults, when their file is
+        // stale: they may have tuned periodicPushMinutes/quiescence by hand and
+        // losing that silently would be worse than the stale defaults we fix.
+        Integer keepPush = config == null ? null : config.periodicPushMinutes;
+        Integer keepTimeout = config == null ? null : config.storageCloseTimeoutSeconds;
+        Integer keepQuiescence = config == null ? null : config.pushQuiescenceMs;
+        Boolean keepTags = config == null ? null : config.showGroupTags;
+        String keepMode = config == null ? null : config.syncMode;
+        Map<String, ModSyncSpec> keepMods = config == null ? null : config.mods;
+
         if (config == null || stale) {
             if (config != null) {
                 Path backup = file.resolveSibling("paths.v" + config.configVersion + ".bak");
@@ -81,6 +92,12 @@ public final class PathsConfig {
                 }
             }
             config = new PathsConfig();
+            if (keepPush != null) config.periodicPushMinutes = keepPush;
+            if (keepTimeout != null) config.storageCloseTimeoutSeconds = keepTimeout;
+            if (keepQuiescence != null) config.pushQuiescenceMs = keepQuiescence;
+            if (keepTags != null) config.showGroupTags = keepTags;
+            if (keepMode != null) config.syncMode = keepMode;
+            if (keepMods != null) config.mods = keepMods;
         }
 
         // Fill in any spec missing from the file (new mod added to the mod).

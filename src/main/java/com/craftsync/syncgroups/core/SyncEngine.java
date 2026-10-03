@@ -64,6 +64,17 @@ public final class SyncEngine {
         return config.symlinkMode() && "dir".equals(root.mode);
     }
 
+    /**
+     * True when this local path is already the group folder, in this session's
+     * mode. Used to skip a copy whose source and target are the same directory —
+     * `DirOps.copyTree` refuses that anyway, but skipping keeps the log readable
+     * and avoids the self-copy exception path on every push.
+     */
+    private static boolean alreadyGroupFolder(Path entry, Path sync) {
+        return DirOps.sameLocation(entry, sync)
+                || (DirOps.isSymlink(entry) && DirOps.linksTo(entry, sync));
+    }
+
     // ------------------------------------------------------------------ create
 
     /** Spec §4.1: create dirs for currently-installed mods, then pull each server's base data in. */
@@ -84,11 +95,24 @@ public final class SyncEngine {
                 Files.createDirectories(syncDir(g.id, spec.modId, root));
             }
         }
+        // Seed from a snapshot: the live object is already in the store, and the
+        // seeding loop moves whole folders around. Editing the stored instance here
+        // meant a concurrent settings change could be lost (or the store could be
+        // rewritten mid-move) — the copy is merged back at the end and is the only
+        // thing written to groups.json.
+        Group working = g.copyOf();
         for (String server : serverKeys) {
-            addServerToGroup(g, server, serverNames == null ? null : serverNames.get(server));
+            addServerToGroup(working, server, serverNames == null ? null : serverNames.get(server));
         }
-        store.update(g);
-        return g;
+        // A settings change may have re-added or replaced the live object while we
+        // worked; in that case the store is authoritative and must not be undone.
+        if (!store.contains(working.id)) {
+            Diag.warn("CREATE: group '%s' disappeared from the store while seeding — not restoring it",
+                    working.tag);
+            return working;
+        }
+        store.update(working);
+        return working;
     }
 
     /** Fresh groups get a random hue so they are told apart at a glance. */
@@ -116,6 +140,13 @@ public final class SyncEngine {
                         // copy) so the data ends up in exactly one place — the link target.
                         Diag.info("ADD %s: seeding group from local (symlink mode) %s -> %s", tag, local, sync);
                         moveContentIn(local, sync);
+                    } else if (localHasData && DirOps.sameContent(local, sync)) {
+                        // The local folder already IS this server's data for the group
+                        // (this is the second time we adopt it, e.g. create() pulls the
+                        // first server and then loops over every server again). Nothing
+                        // is lost, so skip the backup that would otherwise copy the whole
+                        // map into _backups.
+                        Diag.info("ADD %s: local %s already matches the group folder — no backup", tag, local);
                     } else if (localHasData) {
                         Path backup = backupDir(group.id, serverKey, spec.modId, root);
                         Diag.info("ADD %s: local data replaced by group link, backing up to %s", tag, backup);
@@ -257,6 +288,10 @@ public final class SyncEngine {
             } else {
                 Diag.info("PULL %s: fully symlinked — no dirty marker needed", spec.modId);
             }
+            // The marker's timestamp is our own bookkeeping and must not be mistaken
+            // for the mod's data still being written: backdate it, or a conversion
+            // running right after this pull would treat the folders as "unfinished".
+            touchMarkerOlder(markerPath(group.id, spec.modId, serverKey));
         }
         Diag.info("PULL: done for key='%s'", serverKey);
     }
@@ -265,6 +300,10 @@ public final class SyncEngine {
 
     /** Spec §4.4 / §7 push. Called on disconnect and by the periodic timer. */
     public boolean push(Group group, String serverKey, String serverName, boolean removeMarker) throws IOException {
+        // Symlink mode has nothing to copy, but a *leftover* link from a mode
+        // switch made mid-session still has to be reported as "not pushed", so the
+        // marker stays and the recovery path can deal with it.
+        boolean wroteSomething = false;
         Diag.info("PUSH: group='%s' key='%s' name='%s' removeMarker=%s mode=%s",
                 group.tag, serverKey, serverName, removeMarker,
                 config.symlinkMode() ? "symlink" : "copy");
@@ -298,8 +337,7 @@ public final class SyncEngine {
                 for (Path entry : local) {
                     Diag.info("PUSH %s: source %s", tag, Diag.describe(entry));
                     Path sync = syncDir(group.id, spec.modId, root);
-                    if (DirOps.isSymlink(entry)
-                            && (DirOps.linksTo(entry, sync) || DirOps.sameLocation(entry, sync))) {
+                    if (DirOps.isSymlink(entry) && alreadyGroupFolder(entry, sync)) {
                         // Leftover link from a mode switch made mid-session: the entry IS
                         // the group folder, so "copying" it would target itself. The
                         // switch is applied per server on the next join — never here.
@@ -328,16 +366,19 @@ public final class SyncEngine {
                         continue;
                     }
                     copyLocalIntoSync(entry, sync, root);
+                    wroteSomething = true;
                     Diag.info("PUSH %s: %s -> %s", tag, entry, Diag.describe(sync));
                     Diag.tree("PUSH " + tag + " sync", sync, 2);
                 }
             }
         }
-        if (allOk && removeMarker) {
+        if (allOk && removeMarker && wroteSomething) {
             for (ModSyncSpec spec : specs) {
                 Files.deleteIfExists(markerPath(group.id, spec.modId, serverKey));
             }
             Diag.info("PUSH: session markers cleared");
+        } else if (removeMarker && !wroteSomething) {
+            Diag.warn("PUSH: nothing was written (all roots skipped) — keeping the sync marker");
         }
         Diag.info("PUSH: done for key='%s' allOk=%s", serverKey, allOk);
         return allOk;
@@ -499,8 +540,10 @@ public final class SyncEngine {
     }
 
     private static String summaryFor(boolean toSymlink, int linked, int detached, int already, int skipped) {
-        return (toSymlink ? linked + " linked, " : detached + " detached, ")
-                + already + " already correct, " + skipped + " skipped";
+        int done = toSymlink ? linked : detached;
+        String what = toSymlink ? (linked == 1 ? "folder linked" : "folders linked")
+                : (detached == 1 ? "folder detached" : "folders detached");
+        return done + " " + what + ", " + already + " already correct, " + skipped + " skipped";
     }
 
     /**
@@ -540,8 +583,7 @@ public final class SyncEngine {
                     Diag.info("MODE %s: seeding group from %s", tag, local);
                     moveContentIn(local, sync);
                 } else if (DirOps.existsAndNonEmpty(local)) {
-                    if (DirOps.sameContent(local, sync)) {
-                        // The local folder is exactly the group's data (typically the copy
+                    if (DirOps.sameContent(local, sync)) {                        // The local folder is exactly the group's data (typically the copy
                         // a previous switch to copy mode materialised). Nothing is lost by
                         // discarding it, so skip the backup — otherwise every flip leaves
                         // another copy in _backups. replaceWithRelativeSymlink stashes and
@@ -678,8 +720,26 @@ public final class SyncEngine {
             DirOps.copyTree(entry, sync.resolve(entry.getFileName().toString()));
             return;
         }
+        // A stale link from a mode switch that has not been converted yet, pointing
+        // into the group folder: its children ARE the sync folder's children, so a
+        // copy would target the source of every file. Nothing to do, and pushing
+        // would otherwise walk (and possibly race) its own output.
+        if (alreadyGroupFolder(entry, sync)) {
+            Diag.warn("COPY: %s is the group folder itself (%s) — skipping", entry, sync);
+            return;
+        }
+        if (!Files.isDirectory(entry)) {
+            // A file where a dir-mode root expects a container: do not silently drop
+            // it, but do not pretend it was synced either.
+            Diag.warn("COPY %s: %s is not a directory — skipped", root.syncName(), entry);
+            return;
+        }
         try (Stream<Path> s = Files.list(entry)) {
             for (Path child : (Iterable<Path>) s::iterator) {
+                if (alreadyGroupFolder(child, sync.resolve(child.getFileName().toString()))) {
+                    Diag.warn("COPY: %s is the group's own entry — skipping", child);
+                    continue;
+                }
                 DirOps.copyTree(child, sync.resolve(child.getFileName().toString()));
             }
         }
@@ -749,6 +809,21 @@ public final class SyncEngine {
         try {
             Files.deleteIfExists(p);
         } catch (IOException ignored) {
+        }
+    }
+
+    /**
+     * Marks a marker file as "written before us" so a mode conversion running
+     * seconds later does not read it as a session that crashed mid-write.
+     */
+    private void touchMarkerOlder(Path marker) {
+        try {
+            if (Files.exists(marker)) {
+                Files.setLastModifiedTime(marker, java.nio.file.attribute.FileTime.fromMillis(
+                        System.currentTimeMillis() - 60_000L));
+            }
+        } catch (IOException e) {
+            Diag.warn("PULL: could not backdate marker %s: %s", marker, e);
         }
     }
 

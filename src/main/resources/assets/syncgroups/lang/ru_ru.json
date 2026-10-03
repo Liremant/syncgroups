@@ -10,6 +10,7 @@
   "syncgroups.create.step": "Шаг 2 из 2 — название и цвет",
   "syncgroups.create.tag": "Название (макс. 16 символов)",
   "syncgroups.create.confirm": "Создать",
+  "syncgroups.create.failed": "Не удалось создать группу: %s",
 
   "syncgroups.config.title": "Настройки Sync Groups",
   "syncgroups.config.tags": "Метки групп: %s",

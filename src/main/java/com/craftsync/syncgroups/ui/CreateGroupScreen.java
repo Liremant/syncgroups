@@ -12,7 +12,6 @@ import net.minecraft.client.multiplayer.ServerData;
 import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.network.chat.Component;
 
-import java.io.IOException;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -37,6 +36,8 @@ public class CreateGroupScreen extends Screen {
     private EditBox tagBox;
     private ColorPicker picker;
     private int initialColor;
+    /** Shown under the buttons when creation failed; null while everything is fine. */
+    private Component error;
 
     public CreateGroupScreen(Screen parent, Screen doneScreen, List<ServerData> servers) {
         super(Component.translatable("syncgroups.create.title"));
@@ -69,10 +70,10 @@ public class CreateGroupScreen extends Screen {
         // Cancel sits above Create: the primary action takes the bottom slot,
         // matching vanilla screens where "Done"/"Create" is the last button.
         addRenderableWidget(Button.builder(Component.translatable("gui.cancel"), b -> onClose())
-                .bounds(rx, 110, COLUMN_W, 20)
+                .bounds(rx, 102, COLUMN_W, 20)
                 .build());
         Button create = Button.builder(Component.translatable("syncgroups.create.confirm"), b -> onCreate())
-                .bounds(rx, 136, COLUMN_W, 20)
+                .bounds(rx, 128, COLUMN_W, 20)
                 .build();
         create.active = false;
         tagBox.setResponder(s -> create.active = !s.isBlank());
@@ -94,11 +95,15 @@ public class CreateGroupScreen extends Screen {
             }
             Group group = SyncGroupsMod.engine().createGroup(tag, picker.colorInt(), keys, names, SyncGroupsMod.store());
             SyncGroupsMod.LOGGER.info("Created sync group '{}' ({}) for {} server(s)", tag, group.id, keys.size());
-        } catch (IOException | IllegalStateException e) {
-            SyncGroupsMod.LOGGER.error("Failed to create group", e);
+            // Spec: after creating a group, return to the multiplayer server list.
+            minecraft.setScreenAndShow(doneScreen);
+        } catch (Exception e) {
+            // A failed seed (locked file, no write permission, a server already
+            // grouped) must not look like a successful create: report it and stay
+            // on the screen so the player can retry or cancel.
+            SyncGroupsMod.LOGGER.error("Failed to create group '{}'", tag, e);
+            error = Component.translatable("syncgroups.create.failed", String.valueOf(e.getMessage()));
         }
-        // Spec: after creating a group, return to the multiplayer server list.
-        minecraft.setScreenAndShow(doneScreen);
     }
 
     @Override
@@ -109,6 +114,9 @@ public class CreateGroupScreen extends Screen {
         g.text(font, Component.translatable("syncgroups.create.color"), pickerX(), 40, 0xA0A0A0);
         int rx = pickerX() + ColorPicker.layoutWidth(PICKER_W) + COLUMN_GAP;
         g.text(font, Component.translatable("syncgroups.create.tag"), rx, 60, 0xA0A0A0);
+        if (error != null) {
+            g.centeredText(font, error, width / 2, 156, 0xFF5555);
+        }
         picker.draw(g, font);
     }
 

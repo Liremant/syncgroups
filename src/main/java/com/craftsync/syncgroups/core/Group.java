@@ -52,4 +52,19 @@ public class Group {
             return 0xFF55FFAA;
         }
     }
+
+    /**
+     * Snapshot for callers that keep their own copy while editing the live group
+     * (creating one adds it to the store before the seeding loop runs).
+     */
+    public Group copyOf() {
+        Group c = new Group();
+        c.id = id;
+        c.tag = tag;
+        c.color = color;
+        c.servers = new ArrayList<>(servers);
+        c.names = new LinkedHashMap<>(names);
+        c.createdAt = createdAt;
+        return c;
+    }
 }

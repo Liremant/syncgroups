@@ -108,6 +108,11 @@ public final class Diag {
         if (file == null || broken) {
             return;
         }
+        // '"S"' is not thread-safe: two chat/render threads writing at once could
+        // interleave inside a line on the one file remote testers send us.
+        // synchronized covers this method; every caller funnels through it.
+        // ponytail: one lock for all diagnostics, split per level if contention
+        // ever shows up in a profile.
         try {
             Files.writeString(file, text, StandardCharsets.UTF_8,
                     StandardOpenOption.CREATE, StandardOpenOption.APPEND);

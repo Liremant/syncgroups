@@ -39,6 +39,15 @@ public final class ServerKey {
 
     /** Filesystem-safe variant (hosts are mostly safe, but be defensive). */
     public static String sanitize(String serverKey) {
-        return serverKey.replaceAll("[^a-z0-9._%-]", "_");
+        String s = serverKey.replaceAll("[^a-z0-9._%-]", "_");
+        // A legal SMB share name (and a safe file name everywhere else): no
+        // leading/trailing dot, bounded length, never empty. Keys are already
+        // lowercased by normalize(), so lowercasing here only helps callers that
+        // pass a raw address.
+        s = s.toLowerCase(java.util.Locale.ROOT).replaceAll("^[._-]+|[.]+$", "");
+        if (s.isEmpty()) {
+            return "server";
+        }
+        return s.length() <= 64 ? s : s.substring(0, 64);
     }
 }

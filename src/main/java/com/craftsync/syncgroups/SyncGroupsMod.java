@@ -122,6 +122,13 @@ public class SyncGroupsMod implements ClientModInitializer {
                 Diag.warn("JOIN: reached the world without a successful pull — sync did NOT apply "
                         + "for this session (mods may already hold stale in-memory data)");
             }
+            // The mode was switched mid-session and could not be converted then
+            // (mods held their storage). If this server is not synced at all, that
+            // conversion is still due — run it now, off the render thread.
+            if (!session.sessionActive() && session.modePending()) {
+                Diag.info("JOIN: on an ungrouped server with a pending mode change — converting");
+                reconcileSyncModeAsync();
+            }
         });
 
         ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> {
@@ -178,6 +185,13 @@ public class SyncGroupsMod implements ClientModInitializer {
             String summary = engine.convertMode(g);
             Diag.info("MODE: group '%s' -> %s (%s)", g.tag, symlink ? "symlink" : "copy", summary);
         }
+        // Only clear the pending flag if the mode is still the one we converted to
+        // (the user may have flipped it again while this ran).
+        if (config.symlinkMode() == symlink) {
+            session.setModePending(false);
+        } else {
+            Diag.warn("MODE: mode changed again during conversion — a further conversion is due");
+        }
         Diag.info("MODE: conversion to %s finished", symlink ? "symlink" : "copy");
     }
 
@@ -209,6 +223,7 @@ public class SyncGroupsMod implements ClientModInitializer {
         if (session.sessionActive()) {
             Diag.warn("MODE: switched to %s while a session is open — existing folders will be "
                     + "converted on the next game launch", config.syncMode);
+            session.setModePending(true);
             return "deferred";
         }
         reconcileSyncModeAsync();

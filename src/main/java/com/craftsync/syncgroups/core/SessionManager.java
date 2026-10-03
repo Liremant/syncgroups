@@ -24,6 +24,8 @@ public final class SessionManager {
     private long lastPushAt;
     private boolean pullDone;
     private volatile Thread pushThread;
+    /** Set when a mode switch was deferred because a session was open. */
+    private boolean modePending;
     /** Serialises pushes: the periodic one and the disconnect one must not overlap on the same files. */
     private final Object pushLock = new Object();
 
@@ -44,6 +46,19 @@ public final class SessionManager {
     /** True while the player is on a grouped server — conversion must not run then. */
     public synchronized boolean sessionActive() {
         return currentGroup != null;
+    }
+
+    /**
+     * True when the sync mode was changed while a session was open, so the
+     * on-disk conversion is still owed. Cleared once a conversion has run for the
+     * mode currently in the config.
+     */
+    public synchronized boolean modePending() {
+        return modePending;
+    }
+
+    public synchronized void setModePending(boolean pending) {
+        modePending = pending;
     }
 
     /** Called before connecting (ConnectScreen) or at INIT as a fallback. */
