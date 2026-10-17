@@ -158,10 +158,21 @@ public final class SyncEngine {
                 }
 
                 if (DirOps.existsAndNonEmpty(sync) && localHasData) {
-                    // What's about to be overwritten goes to _backups, not /dev/null.
-                    Path backup = backupDir(group.id, serverKey, spec.modId, root);
-                    DirOps.moveTree(sync, backup);
-                    Diag.info("ADD %s: backed up existing group data to %s", tag, backup);
+                    // The group already has data from an earlier server in this
+                    // creation: that copy is the reference. Preserve this server's
+                    // own folder under its own key instead of overwriting the group
+                    // and then filing its data in a backup named after someone else.
+                    if (DirOps.sameContent(local, sync)) {
+                        Diag.info("ADD %s: %s already matches the group folder — nothing to do", tag, local);
+                    } else {
+                        Path backup = backupDir(group.id, serverKey, spec.modId, root);
+                        Diag.warn("ADD %s: group already seeded — this server's own data %s moved to %s",
+                                tag, local, backup);
+                        for (Path entry : existing) {
+                            DirOps.moveTree(entry, backup.resolve(entry.getFileName().toString()));
+                        }
+                    }
+                    continue;
                 }
                 for (Path entry : existing) {
                     copyLocalIntoSync(entry, sync, root);

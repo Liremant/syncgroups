@@ -9,6 +9,7 @@ import java.util.Comparator;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Stream;
 
 /** Small recursive file ops used by the sync engine. */
@@ -121,9 +122,18 @@ public final class DirOps {
     private static final Set<String> SKIPPED_DIRS = Set.of(".git", ".gradle", "build", "node_modules", ".idea");
 
     /**
+     * Files up to this size are compared by content, not just metadata. Small
+     * files (waypoints, configs) are cheap to hash and are exactly where "same
+     * size, same timestamp, different content" would otherwise go unnoticed.
+     * Larger files (region data) rely on size plus a nanosecond timestamp.
+     */
+    private static final long HASH_LIMIT = 256 * 1024;
+
+    /**
      * Conservative content comparison of two directory trees: same set of
      * relative paths (excluding {@link #SKIPPED_DIRS}), and for every file the
-     * same size and modification time.
+     * same size and modification time — plus the same content when the file is
+     * small enough to hash.
      *
      * Used to tell a redundant copy of the group folder from a folder holding
      * something the group does not, so flipping the sync mode back and forth does
@@ -145,7 +155,7 @@ public final class DirOps {
         }
     }
 
-    /** Relative path -> "dir", "link:<target>" or "<size>:<mtime>" for a whole tree. */
+    /** Relative path -> "dir", "link:<target>" or "<size>:<mtime>[:<hash>]" for a whole tree. */
     private static Map<String, String> fingerprint(Path root) throws IOException {
         Map<String, String> out = new TreeMap<>();
         try (Stream<Path> s = Files.walk(root)) {
@@ -163,11 +173,37 @@ public final class DirOps {
                 } else if (Files.isDirectory(p)) {
                     out.put(rel, "dir");
                 } else {
-                    out.put(rel, Files.size(p) + ":" + Files.getLastModifiedTime(p).toMillis());
+                    long size = Files.size(p);
+                    // Nanoseconds, not millis: two files written in the same
+                    // millisecond used to compare equal, which made different
+                    // folders look identical and cost the backup that protects them.
+                    long mtime = Files.getLastModifiedTime(p).to(TimeUnit.NANOSECONDS);
+                    String hash = size <= HASH_LIMIT ? ":" + sha256(p) : "";
+                    out.put(rel, size + ":" + mtime + hash);
                 }
             }
         }
         return out;
+    }
+
+    private static String sha256(Path file) throws IOException {
+        try {
+            java.security.MessageDigest md = java.security.MessageDigest.getInstance("SHA-256");
+            byte[] buf = new byte[8192];
+            try (var in = Files.newInputStream(file)) {
+                int n;
+                while ((n = in.read(buf)) > 0) {
+                    md.update(buf, 0, n);
+                }
+            }
+            StringBuilder sb = new StringBuilder(64);
+            for (byte b : md.digest()) {
+                sb.append(Character.forDigit((b >> 4) & 0xF, 16)).append(Character.forDigit(b & 0xF, 16));
+            }
+            return sb.toString();
+        } catch (java.security.NoSuchAlgorithmException e) {
+            throw new IOException("SHA-256 unavailable", e);
+        }
     }
 
     // ------------------------------------------------------------- symlinks
