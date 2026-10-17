@@ -107,22 +107,6 @@ which paths it touched, how many files and bytes moved. When sync appears to do
 nothing, read `config/syncgroups/diagnostics.log` from the top. It is the only
 file worth attaching to a bug report.
 
-The most common causes:
-
-- **Two spellings of the same server are two different servers.** Keys are the
-  address as typed, lowercased. `mc.example.com` and `mc.example.com:25565` do
-  not match, and neither do `mc.example.com` and `play.example.com` pointing at
-  the same machine.
-- **Xaero's folder is keyed by host only**, so two servers on the same host with
-  different ports share one minimap folder. That is Xaero's layout, not
-  something the mod can change.
-- **Distant Horizons is keyed by the name in your server list.** Renaming the
-  entry starts a new LOD folder.
-- **The push is additive.** Files removed locally are not removed from the
-  group. Merging two servers' maps can therefore leave stale regions behind.
-- **FastQuit can cut the final push short.** The periodic push is the backstop;
-  disconnect normally if you care about the last few minutes.
-
 ## Building
 
 ```
@@ -134,4 +118,8 @@ uses Mojang's official names directly and Loom runs without remapping.
 
 ## License
 
-MIT.
+GNU General Public License, version 3 or later. See [LICENSE](LICENSE).
+
+In practice: you may use, modify and redistribute this mod, but a distributed
+modified version must stay under the same license and ship its source. You
+cannot take this code into a closed-source mod.

@@ -5,7 +5,7 @@
   "name": "Sync Groups",
   "description": "Share per-server client mod data (waypoints, maps, caches) between groups of servers.",
   "authors": [],
-  "license": "MIT",
+  "license": "GPL-3.0-or-later",
   "environment": "client",
   "entrypoints": {
     "client": [

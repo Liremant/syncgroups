@@ -29,6 +29,11 @@ processResources {
     }
 }
 
+// The jar is a distribution of the mod, so the license travels with it.
+tasks.named('jar') {
+    from('LICENSE') { into 'META-INF' }
+}
+
 java {
     toolchain {
         languageVersion = JavaLanguageVersion.of(25)
