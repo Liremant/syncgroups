@@ -1,6 +1,6 @@
 # Sync Groups
 
-A client-side Fabric mod for Minecraft 26.2. It lets you put several servers
+A client-side Fabric mod for Minecraft 26.3. It lets you put several servers
 into a group so that per-server client data — minimap waypoints, world-map
 regions, Bobby's chunk cache, Distant Horizons LODs — is shared between them
 as if they were one server.
@@ -9,8 +9,8 @@ Nothing is uploaded. Everything happens between folders on your own disk.
 
 ## Requirements
 
-- Minecraft 26.2
-- Fabric Loader 0.19.5 or newer
+- Minecraft 26.3
+- Fabric Loader 0.20.1 or newer
 - Fabric API
 - Java 25
 - Mod Menu is optional; without it the settings screen is simply not reachable

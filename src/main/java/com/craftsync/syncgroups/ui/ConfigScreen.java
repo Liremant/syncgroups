@@ -68,7 +68,8 @@ public class ConfigScreen extends Screen {
 
         addRenderableWidget(Button.builder(Component.translatable("syncgroups.config.openFolder"), b -> {
             try {
-                net.minecraft.util.Util.getPlatform().openPath(
+                // 26.3 moved this from Util.OS.openPath to Blaze3D.openPath.
+                com.mojang.blaze3d.Blaze3D.openPath(
                         net.minecraft.client.Minecraft.getInstance().gameDirectory
                                 .toPath().resolve("config").resolve("syncgroups"));
             } catch (Exception e) {

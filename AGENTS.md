@@ -1,4 +1,4 @@
-# AGENTS.md — Sync Groups (Fabric client mod, Minecraft 26.2)
+# AGENTS.md — Sync Groups (Fabric client mod, Minecraft 26.3)
 
 ## Project overview
 
@@ -14,7 +14,7 @@ caches) is shared across the group as if it were one server (full spec: the
 - `integration/` — supported-mod table (`ModSpecs` defaults, `ModSyncSpec.Root`
   dir/prefix modes) and the user-editable `PathsConfig` (paths.json).
 - `ui/` — screens (create/manage group, server picker, Mod Menu settings) on the
-  26.2 `extractRenderState` pipeline.
+  26.3 `extractRenderState` pipeline.
 - `mixin/` — `ConnectScreenMixin` (pre-connect pull), `JoinMultiplayerScreenMixin`
   (button), `ServerEntryTagMixin` (group tag on server entries).
 - Optional Mod Menu integration: `integration/ModMenuIntegration` + a `modmenu`
@@ -93,19 +93,27 @@ caches) is shared across the group as if it were one server (full spec: the
 
 ## Build & toolchain
 
-- Minecraft **26.2**, Fabric Loader **0.19.5**, Fabric API **0.160.0+26.2**,
+- Minecraft **26.3**, Fabric Loader **0.20.1**, Fabric API **0.165.0+26.3**,
   Loom **1.17-SNAPSHOT**, Java **25** (system default is 21 — always set
   `JAVA_HOME=/usr/lib/jvm/java-25-temurin` for gradle).
 - Build/compile: `JAVA_HOME=/usr/lib/jvm/java-25-temurin ./gradlew build`
 - Gradle wrapper is 9.5.1 (system gradle 9.4 is too old for Loom 1.17 — do not
   use bare `gradle`).
+- Loom stays on **1.17-SNAPSHOT** even for 26.3: Loom 1.19.x requires Gradle
+  >= 9.8 and the wrapper here is 9.5.1. Loom 1.17.21 builds 26.3 fine.
+- **26.3 API moves found so far**: `Util.getPlatform().openPath(Path)` is gone;
+  opening a folder is `com.mojang.blaze3d.Blaze3D.openPath(Path)`. Everything
+  else the mod touches (`Screen.extractRenderState`, `GuiGraphicsExtractor`,
+  `MouseButtonEvent`, `ServerSelectionList$OnlineServerEntry.extractContent`,
+  `ConnectScreen.startConnecting`) kept its 26.2 shape. Verify again on the next
+  MC bump — mixin targets are strings, a green compile proves nothing.
 
 ## Mapping conventions (critical)
 
 - **There is no Yarn for 26.x.** Code uses Mojang official names directly.
   Loom runs in non-remapping mode: no `mappings` dependency, no mixin refmaps.
 - Mixin configs: `compatibilityLevel: JAVA_25`, `overwrites.requireAnnotations`.
-- **The 26.2 GUI stack is rewritten**: there is no `GuiGraphics`. Screens
+- **The 26.3 GUI stack is rewritten**: there is no `GuiGraphics`. Screens
   override `extractRenderState(GuiGraphicsExtractor, mouseX, mouseY, partialTick)`;
   selection-list entries implement
   `extractContent(GuiGraphicsExtractor, mouseX, mouseY, hovered, partialTick)`
@@ -113,7 +121,7 @@ caches) is shared across the group as if it were one server (full spec: the
   Text drawing: `gui.text(...)`, `gui.centeredText(...)`; screens get the menu
   background via `extractBackground(...)`.
 - Saved servers render through `ServerSelectionList$OnlineServerEntry`
-  (`NetworkServerEntry` is LAN-only in 26.2). `ServerData` fields: `ip`, `name`.
+  (`NetworkServerEntry` is LAN-only in 26.x). `ServerData` fields: `ip`, `name`.
 - **Do not @Shadow members inherited from a superclass** (e.g. `Screen
   .addRenderableWidget` when targeting a Screen subclass): descriptor matching
   is exact, and shadow resolution of inherited *methods* fails at runtime under
@@ -122,7 +130,7 @@ caches) is shared across the group as if it were one server (full spec: the
   call the method normally. Inherited shadows of *fields* and members declared
   directly in the target class are fine.
 - **Before using any MC API, verify it against the real mapped jar**:
-  `~/.gradle/caches/fabric-loom/26.2/minecraft-merged.jar` via `javap`.
+  `~/.gradle/caches/fabric-loom/26.3/minecraft-merged.jar` via `javap`.
   Compile success proves nothing for mixin targets (string-based).
 
 ## Domain facts (verified Sept 2026 against mod sources/bytecode)
