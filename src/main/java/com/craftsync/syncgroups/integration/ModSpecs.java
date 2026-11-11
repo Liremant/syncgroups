@@ -34,9 +34,12 @@ public final class ModSpecs {
                 // before DhApiWorldUnloadEvent; we can't depend on DH, hence probe-lock fallback.
                 new ModSyncSpec("distanthorizons", "sqlite", "probe-lock",
                         new ModSyncSpec.Root("Distant_Horizons_server_data", "dir", "{name}")),
-                // Voxy keys storage by SHA-256(worldSeed + dimension), NOT by server address — a folder
-                // cannot be derived from the server identity. Left unsupported by default; a maintainer
-                // can map a specific world manually via paths.json (dir pattern with a literal name).
-                new ModSyncSpec("voxy", "files", "probe-lock"));
+                // Voxy 0.2.x: .minecraft/.voxy/saves/<address with ':'→'_'>/<sha256(seed+dim)>/storage/.
+                // The per-server container IS address-keyed (VoxyClientInstance.getBasePath), so we sync
+                // its content like Xaero — the seed/dimension hash layer stays inside and needs no
+                // derivation. storage/ is a RocksDB (default backend) holding LOCK while open, so the
+                // probe-lock wait has a real signal; never copy it live.
+                new ModSyncSpec("voxy", "files", "probe-lock",
+                        new ModSyncSpec.Root(".voxy/saves", "dir", "{server}")));
     }
 }

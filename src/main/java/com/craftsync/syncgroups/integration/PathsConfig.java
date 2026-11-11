@@ -27,7 +27,7 @@ public final class PathsConfig {
      * stale files must pick up. Purely additive fields need no bump: Gson keeps
      * field initializers for keys missing from the file.
      */
-    public static final int CONFIG_VERSION = 2;
+    public static final int CONFIG_VERSION = 3;
 
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
 
@@ -100,9 +100,19 @@ public final class PathsConfig {
             if (keepMods != null) config.mods = keepMods;
         }
 
-        // Fill in any spec missing from the file (new mod added to the mod).
+        // Fill in any spec missing from the file (new mod added to the mod). On a
+        // file from an older default table, a rootless spec is not a user choice —
+        // it is a mod (Voxy) that used to ship unsupported — so give it the new
+        // roots, otherwise the update silently does nothing for existing installs.
+        // A current-version file is left alone: clearing roots stays a way to opt out.
+        boolean migrateRoots = stale;
         PathsConfig effective = config;
-        ModSpecs.defaults().forEach(spec -> effective.mods.putIfAbsent(spec.modId, spec));
+        ModSpecs.defaults().forEach(spec -> effective.mods.compute(spec.modId, (id, existing) -> {
+            if (existing == null || (migrateRoots && existing.roots.isEmpty())) {
+                return spec;
+            }
+            return existing;
+        }));
 
         try {
             Files.createDirectories(file.getParent());

@@ -61,10 +61,13 @@ folder hold data and they differ, the local one is moved to `_backups/`.
 | Litematica | `config/litematica/litematica_<address>*.json`, `area_selections_per_world/<address>/` |
 | Bobby | `.bobby/<address>/` |
 | Distant Horizons | `Distant_Horizons_server_data/<server list name>/` |
+| Voxy (0.2.x) | `.voxy/saves/<address>/` |
 
-**Voxy is not supported.** It keys its storage by a hash of the world seed and
-dimension, which cannot be derived from the server address, so there is no
-folder to point at.
+Voxy nests a hash of the world seed and dimension *inside* its per-server
+folder. That inner layer is never derived by the mod: it is shared data, and
+aliases of the same world produce the same hash anyway. Its `storage/` is a
+RocksDB file set, which cannot be merged, so **copy mode is last-write-wins for
+Voxy** — use symlink mode if you want the LOD data genuinely shared.
 
 Every path above can be overridden in `paths.json` (see below) if a mod update
 moves something.

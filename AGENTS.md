@@ -153,8 +153,20 @@ caches) is shared across the group as if it were one server (full spec: the
   (serverFolderNameMode default NAME_ONLY) — keyed by `{name}`, not address.
   SQLite per (server, dimension). Has `DhApiWorldUnloadEvent`, but we do not
   depend on DH.
-- Voxy: storage keyed by SHA-256(seed+dimension) — cannot be derived from the
-  server identity; unsupported by default, mappable manually in paths.json.
+- Voxy 0.2.x: `.voxy/saves/<address with ':'→'_'>/<sha256(seed+dimension)>/storage/`
+  (`VoxyClientInstance.getBasePath`, verified in 0.2.5 bytecode and against a
+  live instance). The **container** is address-keyed exactly like Bobby — an
+  earlier note here claimed Voxy was undeliverable by looking only at the inner
+  hash layer, which is the Xaero mistake again. Sync the container content
+  (`dir` root `.voxy/saves` + `{server}`), let the hash subfolders co-exist:
+  aliases of one world share the same hash and merge, different worlds just
+  don't collide. `storage/` is **RocksDB** (ZSTD), which is not a
+  mergeable-per-server format — copy mode is last-write-wins, so symlink mode
+  is the honest choice for Voxy. RocksDB holds `LOCK` while open, so probe-lock
+  is a real signal here (unlike Bobby's SQLite).
+- VoxyExtra-style mods alias several addresses onto one folder by mixing into
+  `Path.resolve`; we get the same effect from symlink mode without touching
+  Voxy internals, so no mixin for it.
 - No public "storage closed" events exist for Bobby/Xaero/Voxy; DH is the only
   one. `StorageCloseWaiter` probe-lock is best-effort, especially on Linux
   (SQLite holds no persistent POSIX locks while idle) — keep it honest in
