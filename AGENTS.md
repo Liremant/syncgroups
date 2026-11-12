@@ -36,8 +36,10 @@ caches) is shared across the group as if it were one server (full spec: the
   on-disk work; the conversion runs on a background thread because materialising a
   group back into copies can mean hundreds of MB (Bobby regions, DH databases) and
   must not stall the loading screen. It is serialised with the join pull via
-  `SyncEngine.fsLock`, held per (server, root) so a join never waits behind an
-  unrelated server's conversion. While a session is open the mode is only saved —
+  `SyncEngine.fsLock`: one monitor, but the conversion takes it per (server,
+  root) and releases it between units, so a join waits for at most one server's
+  copy rather than for the whole conversion. Dirty-marker recovery takes the
+  same monitor. While a session is open the mode is only saved —
   the conversion waits for the next launch, because the mods have their storage in
   use. Before converting, pending dirty markers are published
   (`recoverDirtyMarkers`) so a crashed copy-mode session's newest data is not
@@ -179,14 +181,18 @@ caches) is shared across the group as if it were one server (full spec: the
   comments and logs.
 - **The join pull has three hooks, in order: `ConnectScreen.startConnecting`
   (primary, via ConnectScreenMixin), `ClientPlayConnectionEvents.INIT` (fallback),
-  then a client-tick retry if INIT could not resolve the server.**
+  then a bounded client-tick retry (3 attempts) if INIT could not resolve the
+  server.**
   Do NOT rely on `Minecraft.getCurrentServer()` alone: it reads from the
   connection handler and can be null at INIT, which silently turned the whole
   join pull into a no-op. `handler.getServerData()` is the better source at INIT.
   JOIN is too late — Xaero has already initialized its sessions there and keeps
   serving stale in-memory data over freshly pulled files (verified in production).
-  SessionManager methods are synchronized because these hooks fire on different
-  threads (render thread for ConnectScreen, netty for INIT).
+  The hooks fire on different threads (render thread for ConnectScreen, netty
+  for INIT), so SessionManager guards its state with the monitor — but the pull
+  itself runs outside it, or a multi-second pull would block the render thread
+  that reads that state every tick. A second hook for the same key is refused
+  via `pullingFor`, and a connect that never opens a world clears the session.
 - **Push waits for quiescence, but it is not a gate.** Xaero flushes world-map
   regions *after* our disconnect handler runs and holds no file locks, so a
   probe-lock check alone passes instantly and copies a half-written snapshot.
