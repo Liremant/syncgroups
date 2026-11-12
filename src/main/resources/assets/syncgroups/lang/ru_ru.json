@@ -38,5 +38,6 @@
   "syncgroups.config.mode.nosupport": "Симлинки недоступны в этой системе — остаются копии (в Windows нужен режим разработчика)",
   "syncgroups.pick.selected": "выбрано: %d",
   "syncgroups.create.sameServers": "Эти серверы с одним адресом — выберите два разных",
-  "syncgroups.manage.removeFailed": "Не удалось убрать сервер: %s"
+  "syncgroups.manage.removeFailed": "Не удалось убрать сервер: %s",
+  "syncgroups.pick.needTwo": "Сначала добавьте в список минимум 2 сервера"
 }

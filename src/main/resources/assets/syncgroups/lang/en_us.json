@@ -38,5 +38,6 @@
   "syncgroups.config.mode.nosupport": "Symlinks are unavailable on this system — copies stay in use (Windows needs Developer Mode)",
   "syncgroups.pick.selected": "%d selected",
   "syncgroups.create.sameServers": "Those servers share one address — pick two that differ",
-  "syncgroups.manage.removeFailed": "Could not remove the server: %s"
+  "syncgroups.manage.removeFailed": "Could not remove the server: %s",
+  "syncgroups.pick.needTwo": "Save at least 2 servers in the multiplayer list first"
 }

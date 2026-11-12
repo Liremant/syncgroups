@@ -108,8 +108,10 @@ public class ServerPickScreen extends Screen {
         super.extractRenderState(g, mouseX, mouseY, partialTick);
         g.centeredText(font, title, width / 2, 12, 0xFFFFFF);
         g.centeredText(font, Component.translatable("syncgroups.pick.step"), width / 2, 26, 0x909090);
-        g.centeredText(font, Component.translatable("syncgroups.pick.selected", selected.size()),
-                width / 2, height - 68, 0x909090);
+        g.centeredText(font, servers.size() < 2
+                        ? Component.translatable("syncgroups.pick.needTwo")
+                        : Component.translatable("syncgroups.pick.selected", selected.size()),
+                width / 2, height - 68, servers.size() < 2 ? 0xE0C060 : 0x909090);
     }
 
     @Override
