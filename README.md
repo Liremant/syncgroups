@@ -64,13 +64,21 @@ folder hold data and they differ, the local one is moved to `_backups/`.
 | Voxy (0.2.x) | `.voxy/saves/<address>/` |
 
 Voxy nests a hash of the world seed and dimension *inside* its per-server
-folder. That inner layer is never derived by the mod: it is shared data, and
-aliases of the same world produce the same hash anyway. Its `storage/` is a
-RocksDB file set, which cannot be merged, so **copy mode is last-write-wins for
-Voxy** — use symlink mode if you want the LOD data genuinely shared.
+folder. That inner layer is never derived by the mod: it is whatever Voxy wrote
+— shared for real in symlink mode, replaced by the last push in copy mode. Its
+`storage/` is a RocksDB file set, which cannot be merged, so **copy mode is
+last-write-wins for Voxy** — use symlink mode if you want the LOD data
+genuinely shared.
 
 Every path above can be overridden in `paths.json` (see below) if a mod update
 moves something.
+
+`paths.json` carries a `configVersion`. When a built-in default changes in a way
+existing files must pick up, the version is bumped: the old file is moved to
+`paths.v<N>.bak` and a fresh one is written with your settings carried over, so
+hand edits to paths need re-applying. A root you clear (empty `roots`) is a real
+opt-out and stays cleared; only a mod that used to ship without roots (Voxy) gets
+them back on a bump.
 
 ## Where the files are
 

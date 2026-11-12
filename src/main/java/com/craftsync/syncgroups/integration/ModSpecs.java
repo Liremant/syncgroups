@@ -37,8 +37,10 @@ public final class ModSpecs {
                 // Voxy 0.2.x: .minecraft/.voxy/saves/<address with ':'→'_'>/<sha256(seed+dim)>/storage/.
                 // The per-server container IS address-keyed (VoxyClientInstance.getBasePath), so we sync
                 // its content like Xaero — the seed/dimension hash layer stays inside and needs no
-                // derivation. storage/ is a RocksDB (default backend) holding LOCK while open, so the
-                // probe-lock wait has a real signal; never copy it live.
+                // derivation. storage/ is RocksDB (ZSTD) and holds storage/LOCK while open, but our
+                // probe cannot observe it — fcntl locks are per-process and the probe discards
+                // tryLock's null — so the only real guard is the quiescence wait. Symlink mode is
+                // the safe choice for Voxy.
                 new ModSyncSpec("voxy", "files", "probe-lock",
                         new ModSyncSpec.Root(".voxy/saves", "dir", "{server}")));
     }

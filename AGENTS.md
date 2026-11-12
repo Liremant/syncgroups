@@ -77,7 +77,7 @@ caches) is shared across the group as if it were one server (full spec: the
 - Version lives in `gradle.properties` (`mod_version`); bump it when behavior
   changes in a user-visible way.
 - The spec (ТЗ) is the source of truth for behavior; deviations discovered by
-  research (e.g. Voxy unsupported by default, DH keyed by server name) are
+  research (e.g. Distant Horizons keyed by server name, not address) are
   recorded below and in code comments — update both together.
 
 ## Workflow rules
@@ -159,11 +159,15 @@ caches) is shared across the group as if it were one server (full spec: the
   earlier note here claimed Voxy was undeliverable by looking only at the inner
   hash layer, which is the Xaero mistake again. Sync the container content
   (`dir` root `.voxy/saves` + `{server}`), let the hash subfolders co-exist:
-  aliases of one world share the same hash and merge, different worlds just
-  don't collide. `storage/` is **RocksDB** (ZSTD), which is not a
-  mergeable-per-server format — copy mode is last-write-wins, so symlink mode
-  is the honest choice for Voxy. RocksDB holds `LOCK` while open, so probe-lock
-  is a real signal here (unlike Bobby's SQLite).
+  the hash is SHA-256 over a `biomeSeed` plus the dimension key, which we never
+  derive, so the folder simply carries whatever Voxy wrote — different worlds
+  don't collide, and the same world re-visited under another address may or may
+  not land on the same hash (we do not rely on either). `storage/` is **RocksDB**
+  (ZSTD), which is not a mergeable-per-server format — copy mode is
+  last-write-wins, so symlink mode is the honest choice for Voxy. RocksDB does
+  hold `storage/LOCK` while open, but probe-lock cannot see it: fcntl locks are
+  per-process (so a lock our own JVM's native lib holds is invisible) and the
+  probe itself discards `tryLock`'s null. The real guard is the quiescence wait.
 - VoxyExtra-style mods alias several addresses onto one folder by mixing into
   `Path.resolve`; we get the same effect from symlink mode without touching
   Voxy internals, so no mixin for it.
