@@ -74,9 +74,6 @@ public class SyncGroupsScreen extends Screen {
         }
         // "Done" is the screen's primary exit — keep it at the very bottom, the
         // same slot vanilla uses, with the list action stacked above it.
-        addRenderableWidget(Button.builder(Component.translatable("syncgroups.manage.new"), b -> minecraft.setScreenAndShow(new ServerPickScreen(this, parent)))
-                .bounds(width / 2 - 100, height - 52, 200, 20)
-                .build());
         newGroup = Button.builder(Component.translatable("syncgroups.manage.new"), b -> minecraft.setScreenAndShow(new ServerPickScreen(this, parent)))
                 .bounds(width / 2 - 100, height - 52, 200, 20)
                 .build();

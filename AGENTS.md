@@ -39,9 +39,9 @@ caches) is shared across the group as if it were one server (full spec: the
   `SyncEngine.fsLock`: one monitor. The conversion takes it per (server, root)
   and releases it between units, so a join waits for at most one server's copy
   rather than for the whole conversion; the join pull itself holds it for its own
-  duration, and a dissolve holds it for the whole copy-out (so a connect made
-  during a dissolve waits). Dirty-marker recovery and each push's copy take the
-  same monitor. While a session is open the mode is only saved —
+  duration, a dissolve holds it for the whole copy-out, and removing a server
+  detaches just that server's links under it (so a connect made during either
+  waits). Dirty-marker recovery and each push's copy take the same monitor. While a session is open the mode is only saved —
   the conversion waits for the next launch, because the mods have their storage in
   use. Before converting, pending dirty markers are published
   (`recoverDirtyMarkers`) so a crashed copy-mode session's newest data is not
