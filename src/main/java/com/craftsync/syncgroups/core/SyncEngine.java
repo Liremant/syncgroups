@@ -42,8 +42,9 @@ public final class SyncEngine {
      * Guards folder moves: the mode conversion (background thread) and the join
      * pull (render/netty thread) can touch the same local path, and a copy that
      * starts while another thread is moving that folder is how data gets lost.
-     * Held per (server, root) unit of work, not for a whole group, so a join is
-     * never stuck behind a long conversion of an unrelated server.
+     * One monitor, but the conversion takes it per (server, root) unit and releases
+     * it between units, so a join waits for at most one server's copy — not for the
+     * whole conversion.
      */
     private final Object fsLock = new Object();
 
@@ -130,7 +131,19 @@ public final class SyncEngine {
             return working;
         } catch (IOException | RuntimeException e) {
             // A group in groups.json with no folders (and servers that are now
-            // "already grouped") makes the wizard a dead end on retry. Remove it.
+            // "already grouped") makes the wizard a dead end on retry. Remove it —
+            // but keep its folders: seeding may already have moved a server's data
+            // into _backups under that id, and deleting it would lose it for good.
+            Path dir = rootDir.resolve(g.id);
+            if (Files.isDirectory(dir, LinkOption.NOFOLLOW_LINKS)) {
+                Path orphan = rootDir.resolve("_dissolved").resolve(g.id + "_" + Instant.now().getEpochSecond());
+                try {
+                    DirOps.moveTree(dir, orphan);
+                    Diag.warn("CREATE: failed create — the partial group folder is kept at %s", orphan);
+                } catch (IOException moveFailure) {
+                    Diag.error("CREATE: could not move the partial group folder aside", moveFailure);
+                }
+            }
             try {
                 store.remove(g);
             } catch (IOException removeFailure) {
@@ -222,7 +235,7 @@ public final class SyncEngine {
     private void pullForJoinLocked(Group group, String serverKey, String serverName) throws IOException {
         Diag.info("PULL: group='%s' key='%s' name='%s' mode=%s",
                 group.tag, serverKey, serverName, config.symlinkMode() ? "symlink" : "copy");
-        recoverDirtyMarkers(group);
+        recoverDirtyMarkersLocked(group);
         List<ModSyncSpec> specs = activeSpecs();
         if (specs.isEmpty()) {
             Diag.warn("PULL: no supported mods detected as installed — nothing to sync. "
@@ -454,6 +467,14 @@ public final class SyncEngine {
 
     /** Spec §7.2–7.4: push leftovers of a crashed session before any join pull. */
     public void recoverDirtyMarkers(Group group) {
+        // Same lock as the pull and the conversion: the startup pass used to run
+        // unguarded while a join could be deleting the very folders it walks.
+        synchronized (fsLock) {
+            recoverDirtyMarkersLocked(group);
+        }
+    }
+
+    private void recoverDirtyMarkersLocked(Group group) {
         try (Stream<Path> mods = Files.list(rootDir.resolve(group.id))) {
             for (Path modDir : (Iterable<Path>) mods.filter(Files::isDirectory)::iterator) {
                 String modId = modDir.getFileName().toString();
@@ -507,11 +528,11 @@ public final class SyncEngine {
         if (serverName == null || serverName.isBlank()) {
             serverName = group.nameOf(serverKey);
         }
-        boolean anyData = false;
-        boolean needsRecovery = false;
+        boolean unresolved = false;
         for (ModSyncSpec.Root root : spec.roots) {
             String tag = modId + "/" + root.syncName();
             if (!canResolve(root, vars(serverKey, serverName), tag)) {
+                unresolved = true;
                 continue;
             }
             // Decide on the *physical* state, not on the configured mode: after a
@@ -526,10 +547,8 @@ public final class SyncEngine {
                         modId, root.syncName(), serverKey);
                 continue;
             }
-            needsRecovery = true;
             List<Path> local = root.resolveExisting(gameDir, vars(serverKey, serverName));
             for (Path entry : local) {
-                anyData = true;
                 Optional<String> suspect = IntegrityChecker.forName(spec.integrity).check(entry);
                 if (suspect.isPresent()) {
                     // Spec §7.4: never push suspect data over the group copy — and never
@@ -556,7 +575,12 @@ public final class SyncEngine {
                 }
             }
         }
-        if (anyData || !needsRecovery) {
+        // Keep the marker when a root could not even be resolved: deleting it would
+        // let the next conversion treat the newer local data as a plain folder and
+        // file it into _backups instead of publishing it.
+        if (unresolved) {
+            Diag.warn("RECOVERY %s: some roots could not be resolved for key='%s' — marker kept", modId, serverKey);
+        } else {
             quietDelete(marker);
         }
     }
@@ -611,7 +635,8 @@ public final class SyncEngine {
                         return summaryFor(toSymlink, linked, detached, already, skipped);
                     }
                     String serverName = group.nameOf(serverKey);
-                    if (serverName == null && root.pattern != null && root.pattern.contains("{name}")) {
+                    if ((serverName == null || serverName.isBlank())
+                            && root.pattern != null && root.pattern.contains("{name}")) {
                         // Distant Horizons and friends: without the name there is no
                         // path to convert. It will be adopted on that server's next join.
                         Diag.warn("MODE %s: no remembered name for key='%s' — skipped (will convert on its next join)",
@@ -742,10 +767,22 @@ public final class SyncEngine {
     public void dissolve(Group group, GroupsStore store) throws IOException {
         Path stamp = rootDir.resolve("_dissolved").resolve(group.id + "_" + Instant.now().getEpochSecond());
         Path dir = rootDir.resolve(group.id);
+        boolean moved = false;
         if (Files.isDirectory(dir, LinkOption.NOFOLLOW_LINKS)) {
             DirOps.moveTree(dir, stamp);
+            moved = true;
         }
-        store.remove(group);
+        try {
+            store.remove(group);
+        } catch (IOException e) {
+            // The group still exists on disk, so its data must too: with the folder
+            // at _dissolved, the next join would recreate empty folders and the group
+            // would silently never sync again.
+            if (moved) {
+                DirOps.moveTree(stamp, dir);
+            }
+            throw e;
+        }
         Diag.info("DISSOLVE: group '%s' (%s) moved to %s", group.tag, group.id, stamp);
     }
 

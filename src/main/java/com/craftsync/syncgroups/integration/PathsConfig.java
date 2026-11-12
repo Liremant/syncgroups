@@ -61,7 +61,8 @@ public final class PathsConfig {
      * Symlink mode applies to directory-shaped roots only (Xaero, Bobby, DH);
      * Litematica-style per-file roots always stay on copies.
      */
-    public String syncMode = "copy";
+    /** Written by the settings screen (render thread) and read by the conversion/push threads. */
+    public volatile String syncMode = "copy";
     public Map<String, ModSyncSpec> mods = new LinkedHashMap<>();
 
     public boolean symlinkMode() {

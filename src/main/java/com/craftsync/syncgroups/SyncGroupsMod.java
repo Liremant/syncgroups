@@ -30,6 +30,8 @@ public class SyncGroupsMod implements ClientModInitializer {
     private static SessionManager session;
     /** Set when INIT could not resolve the target server; retried on the next tick. */
     private static volatile boolean pendingPull;
+    /** Bounds that retry: an ungrouped server would otherwise be retried every tick forever. */
+    private static int pullAttempts;
     /** Background sync-mode conversion, joined on shutdown so a switch is not cut in half. */
     private static volatile Thread modeThread;
 
@@ -111,6 +113,7 @@ public class SyncGroupsMod implements ClientModInitializer {
             if (server == null) {
                 Diag.warn("INIT: no ServerData available yet — pull deferred to client tick");
                 pendingPull = true;
+                pullAttempts = 0;
                 return;
             }
             session.onLogin(server.ip, server.name);
@@ -138,11 +141,11 @@ public class SyncGroupsMod implements ClientModInitializer {
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             if (pendingPull && !session.pullDone()) {
                 ServerData data = client == null ? null : client.getCurrentServer();
-                if (data != null) {
-                    Diag.warn("TICK: running deferred pull for '%s'/'%s' (late — a mod may have "
-                            + "opened its storage already)", data.name, data.ip);
-                    session.onLogin(data.ip, data.name);
-                    pendingPull = false;
+                if (data != null && pullAttempts < 3) {
+                    pullAttempts++;
+                    Diag.warn("TICK: running deferred pull attempt %d for '%s'/'%s' (late — a mod may "
+                            + "have opened its storage already)", pullAttempts, data.name, data.ip);
+                    pendingPull = !session.onLogin(data.ip, data.name);
                 }
             }
             session.tick();
@@ -245,13 +248,15 @@ public class SyncGroupsMod implements ClientModInitializer {
             return "deferred";
         }
         if (symlink) {
-            // Say so before the conversion silently does nothing: on Windows this
-            // needs Developer Mode, and the user would otherwise be told it applied.
+            // Say so before the conversion silently does nothing, and keep the config
+            // consistent with what will happen: leaving "symlink" saved would make
+            // every push a no-op on a system that cannot create links.
             String problem = DirOps.probeSymlinkSupport(
                     FabricLoader.getInstance().getGameDir().resolve("config").resolve("syncgroups").resolve(".probe"));
             if (problem != null) {
-                Diag.warn("MODE: this system cannot create symlinks (%s) — the setting is saved "
-                        + "but copies stay in use", problem);
+                Diag.warn("MODE: this system cannot create symlinks (%s) — staying on copies", problem);
+                config.syncMode = "copy";
+                saveConfig();
                 return "nosupport";
             }
         }

@@ -35,5 +35,8 @@
   "syncgroups.manage.empty": "No groups yet — press “New group”",
   "syncgroups.manage.failed": "Could not remove the server: %s",
   "syncgroups.create.same": "Those saved servers point at the same address — pick two different ones",
-  "syncgroups.config.mode.nosupport": "Symlinks are unavailable on this system — copies stay in use (Windows needs Developer Mode)"
+  "syncgroups.config.mode.nosupport": "Symlinks are unavailable on this system — copies stay in use (Windows needs Developer Mode)",
+  "syncgroups.pick.selected": "%d selected",
+  "syncgroups.create.sameServers": "Those servers share one address — pick two that differ",
+  "syncgroups.manage.removeFailed": "Could not remove the server: %s"
 }

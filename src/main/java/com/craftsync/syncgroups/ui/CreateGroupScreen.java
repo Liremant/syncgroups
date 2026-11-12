@@ -100,7 +100,7 @@ public class CreateGroupScreen extends Screen {
                 names.put(key, server.name);
             }
             if (keys.size() < 2) {
-                error = Component.translatable("syncgroups.create.same");
+                error = Component.translatable("syncgroups.create.sameServers");
                 return;
             }
             Group group = SyncGroupsMod.engine().createGroup(tag, picker.colorInt(), keys, names, SyncGroupsMod.store());
@@ -128,10 +128,8 @@ public class CreateGroupScreen extends Screen {
         if (error != null) {
             // After the picker and below the swatch: at y=156 the message was painted
             // underneath the SV square, so a rejected create looked like a dead click.
-            List<net.minecraft.util.FormattedCharSequence> lines =
-                    font.split(error, Math.max(120, width - 40));
-            int ey = 50 + PICKER_H + 10 + 16 + 10;
-            for (net.minecraft.util.FormattedCharSequence line : lines) {
+            int ey = Math.min(height - 40, 50 + PICKER_H + 10 + 16 + 12);
+            for (var line : font.split(error, Math.max(160, width - 40))) {
                 g.centeredText(font, line, width / 2, ey, 0xFF5555);
                 ey += font.lineHeight;
             }

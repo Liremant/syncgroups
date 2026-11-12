@@ -18,19 +18,19 @@ import java.util.Set;
  * "Next" is enabled once ≥2 servers are selected. Simple manual scroll —
  * rows that do not fit are reached with the mouse wheel.
  *
- * The selection is kept per address, not per widget: the widgets are rebuilt on
- * every scroll and resize, and a selection made before scrolling used to be
- * silently dropped.
+ * The selection lives here, not in the widgets: rebuilding the widget list on
+ * scroll/resize used to throw it away, so ticking a server, scrolling, and
+ * pressing Next silently grouped fewer servers than the player picked.
  */
 public class ServerPickScreen extends Screen {
 
     private static final int ROW_HEIGHT = 24;
     private static final int VISIBLE_ROWS = 6;
-    private static final int MIN_SERVERS = 2;
 
     private final Screen parent;
     private final Screen doneScreen; // where a successful create lands (the server list)
     private final ServerList servers;
+    /** Selected saved-server addresses (the checkbox identity). */
     private final Set<String> selected = new LinkedHashSet<>();
     private Button next;
     private int scroll;
@@ -45,23 +45,24 @@ public class ServerPickScreen extends Screen {
 
     @Override
     protected void init() {
-        // Rows may have disappeared (or the window grown): keep the window valid.
+        // The list can shrink between visits; keep the window inside it.
         scroll = Math.max(0, Math.min(scroll, Math.max(0, servers.size() - VISIBLE_ROWS)));
         int listWidth = Math.min(300, width - 40);
         int x0 = (width - listWidth) / 2;
         int y0 = 40;
         for (int i = scroll; i < servers.size() && i < scroll + VISIBLE_ROWS; i++) {
             ServerData data = servers.get(i);
-            Checkbox box = Checkbox.builder(Component.literal(data.name + " (" + data.ip + ")"), font)
+            String address = data.ip;
+            Checkbox box = Checkbox.builder(serverLabel(data), font)
                     .pos(x0, y0 + (i - scroll) * ROW_HEIGHT)
-                    .selected(selected.contains(data.ip))
-                    .onValueChange((cb, value) -> {
-                        if (value) {
-                            selected.add(data.ip);
+                    .selected(selected.contains(address))
+                    .onValueChange((cb, checked) -> {
+                        if (checked) {
+                            selected.add(address);
                         } else {
-                            selected.remove(data.ip);
+                            selected.remove(address);
                         }
-                        updateNext();
+                        refreshNext();
                     })
                     .build();
             addRenderableWidget(box);
@@ -73,25 +74,31 @@ public class ServerPickScreen extends Screen {
         addRenderableWidget(Button.builder(Component.translatable("gui.cancel"), b -> onClose())
                 .bounds(width / 2 - 100, height - 52, 200, 20)
                 .build());
-        updateNext();
+        refreshNext();
     }
 
-    private void updateNext() {
+    private static Component serverLabel(ServerData data) {
+        // A saved entry can have no name yet (a hand-edited servers.dat): show the address.
+        String name = data.name == null || data.name.isBlank() ? data.ip : data.name;
+        return Component.literal(name + " (" + data.ip + ")");
+    }
+
+    private void refreshNext() {
         if (next != null) {
-            next.active = selected.size() >= MIN_SERVERS;
+            next.active = selected.size() >= 2;
         }
     }
 
     private void onNext() {
         List<ServerData> picked = new ArrayList<>();
-        for (int i = 0; i < servers.size(); i++) {
+        for (int i = 0; i < servers.size() && picked.size() < selected.size(); i++) {
             ServerData data = servers.get(i);
-            if (selected.contains(data.ip) && picked.stream().noneMatch(s -> s.ip.equals(data.ip))) {
+            if (selected.contains(data.ip)) {
                 picked.add(data);
             }
         }
-        if (picked.size() < MIN_SERVERS) {
-            return;
+        if (picked.size() < 2) {
+            return; // the button is disabled; this only guards a stale click
         }
         minecraft.setScreenAndShow(new CreateGroupScreen(this, doneScreen, picked));
     }
@@ -101,9 +108,8 @@ public class ServerPickScreen extends Screen {
         super.extractRenderState(g, mouseX, mouseY, partialTick);
         g.centeredText(font, title, width / 2, 12, 0xFFFFFF);
         g.centeredText(font, Component.translatable("syncgroups.pick.step"), width / 2, 26, 0x909090);
-        if (selected.size() < MIN_SERVERS) {
-            g.centeredText(font, Component.translatable("syncgroups.pick.need"), width / 2, height - 68, 0xE0C060);
-        }
+        g.centeredText(font, Component.translatable("syncgroups.pick.selected", selected.size()),
+                width / 2, height - 68, 0x909090);
     }
 
     @Override

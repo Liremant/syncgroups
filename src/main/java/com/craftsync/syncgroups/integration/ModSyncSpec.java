@@ -120,7 +120,9 @@ public class ModSyncSpec {
 
         private static String safe(String name) {
             // '%' is allowed so mod-specific escapes (e.g. Xaero's %us%) survive intact.
-            return name.replaceAll("[^a-zA-Z0-9._% -]", "_");
+            // Dots are kept (Xaero's Multiplayer_mc.example.com) but a ".." is not a
+            // name: a server-list entry called ".." would otherwise escape the root.
+            return name.replace("..", "__").replaceAll("[^a-zA-Z0-9._% -]", "_");
         }
     }
 }

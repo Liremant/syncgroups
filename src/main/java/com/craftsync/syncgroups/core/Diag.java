@@ -47,8 +47,10 @@ public final class Diag {
                 Files.move(file, file.resolveSibling("diagnostics.prev.log"),
                         java.nio.file.StandardCopyOption.REPLACE_EXISTING);
             }
-        } catch (IOException e) {
-            broken = true;
+        } catch (IOException | RuntimeException e) {
+            // A failed rotation (the previous file open in an editor, a full disk)
+            // must not switch the whole log off: it is the one file testers send.
+            LOGGER.warn("syncgroups diagnostics rotation failed: {}", e.toString());
         }
     }
 
@@ -116,7 +118,7 @@ public final class Diag {
         try {
             Files.writeString(file, text, StandardCharsets.UTF_8,
                     StandardOpenOption.CREATE, StandardOpenOption.APPEND);
-        } catch (IOException e) {
+        } catch (IOException | RuntimeException e) {
             broken = true; // log once, then stay quiet
         }
     }
@@ -158,7 +160,8 @@ public final class Diag {
                 } catch (IOException ignored) {
                 }
             }
-        } catch (IOException ignored) {
+        } catch (IOException | RuntimeException ignored) {
+            // UncheckedIOException from Files.walk must not reach a sync path.
         }
         return new long[]{count, bytes};
     }
@@ -177,7 +180,11 @@ public final class Diag {
         }
         List<String> lines = new ArrayList<>();
         try (Stream<Path> s = Files.walk(dir, maxDepth)) {
-            List<Path> all = s.sorted(Comparator.comparing(Path::toString)).toList();
+            // Bounded read: a Bobby/DH tree holds tens of thousands of files and this
+            // runs on the sync thread, sometimes on the render thread.
+            List<Path> all = s.sorted(Comparator.comparing(Path::toString))
+                    .limit(MAX_TREE_ENTRIES + 1L)
+                    .toList();
             boolean truncated = all.size() > MAX_TREE_ENTRIES;
             for (Path p : all.subList(0, Math.min(all.size(), MAX_TREE_ENTRIES))) {
                 String rel = dir.relativize(p).toString();
@@ -190,7 +197,8 @@ public final class Diag {
             if (truncated) {
                 lines.add("    ... (" + (all.size() - MAX_TREE_ENTRIES) + " more)");
             }
-        } catch (IOException e) {
+        } catch (IOException | RuntimeException e) {
+            // Diagnostics must never throw into the pull/push loops that call this.
             info("TREE %s: %s  [walk failed: %s]", label, dir, e);
             return;
         }

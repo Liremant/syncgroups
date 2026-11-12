@@ -51,7 +51,7 @@ public interface IntegrityChecker {
         @Override
         public Optional<String> check(Path dir) {
             try (Stream<Path> s = Files.walk(dir)) {
-                for (Path p : (Iterable<Path>) s.filter(f -> f.getFileName().toString().endsWith(".db") && Files.isRegularFile(f))::iterator) {
+                for (Path p : (Iterable<Path>) s.filter(IntegrityChecker.Sqlite::looksLikeDb)::iterator) {
                     Optional<String> problem = checkDb(p);
                     if (problem.isPresent()) {
                         return problem;
@@ -63,6 +63,12 @@ public interface IntegrityChecker {
             return new FilesChecker().check(dir);
         }
 
+        /** Distant Horizons names its file DistantHorizons.sqlite, plain SQLite mods use .db. */
+        private static boolean looksLikeDb(Path p) {
+            String n = p.getFileName().toString().toLowerCase(java.util.Locale.ROOT);
+            return (n.endsWith(".db") || n.endsWith(".sqlite")) && Files.isRegularFile(p);
+        }
+
         /**
          * Header-only check. The PRAGMA quick_check path this used to call needed a
          * JDBC driver that is not on the classpath, so it always silently returned
@@ -71,6 +77,12 @@ public interface IntegrityChecker {
          */
         private Optional<String> checkDb(Path db) {
             try {
+                // SQLite creates the file empty before the first write: an empty
+                // database is valid, and flagging it skipped every later push for
+                // that mod and pushed its folder into _backups on each recovery.
+                if (Files.size(db) == 0) {
+                    return Optional.empty();
+                }
                 byte[] head = new byte[HEADER.length];
                 try (var in = Files.newInputStream(db)) {
                     if (in.readNBytes(head, 0, head.length) != head.length

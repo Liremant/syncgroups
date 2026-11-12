@@ -35,5 +35,8 @@
   "syncgroups.manage.empty": "Групп пока нет — нажмите «Новая группа»",
   "syncgroups.manage.failed": "Не удалось убрать сервер: %s",
   "syncgroups.create.same": "Эти сохранённые серверы ведут на один адрес — выберите два разных",
-  "syncgroups.config.mode.nosupport": "Симлинки недоступны в этой системе — остаются копии (в Windows нужен режим разработчика)"
+  "syncgroups.config.mode.nosupport": "Симлинки недоступны в этой системе — остаются копии (в Windows нужен режим разработчика)",
+  "syncgroups.pick.selected": "выбрано: %d",
+  "syncgroups.create.sameServers": "Эти серверы с одним адресом — выберите два разных",
+  "syncgroups.manage.removeFailed": "Не удалось убрать сервер: %s"
 }

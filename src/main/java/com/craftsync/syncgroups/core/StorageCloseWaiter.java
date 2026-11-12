@@ -145,10 +145,12 @@ public final class StorageCloseWaiter {
             }
             lock.release();
             return true;
-        } catch (java.nio.file.AccessDeniedException e) {
-            // A read-only file cannot be a mod's live write handle, and we only read
-            // it while copying. Not a reason to block every future push.
-            return true;
+        } catch (java.io.FileNotFoundException e) {
+            // A read-only file cannot be a mod's live write handle, and RandomAccessFile
+            // reports it as FileNotFoundException (not AccessDeniedException). We copy
+            // such files all the time (COPY_ATTRIBUTES keeps 0444 bits), so treating
+            // them as "still in use" blocked every later push for that mod.
+            return !Files.exists(p) || !Files.isWritable(p);
         } catch (IOException e) {
             return false; // locked by another process, or otherwise unavailable
         }
