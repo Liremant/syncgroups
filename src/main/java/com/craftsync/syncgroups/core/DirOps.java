@@ -53,6 +53,13 @@ public final class DirOps {
         try (Stream<Path> s = Files.walk(from)) {
             for (Path src : (Iterable<Path>) s::iterator) {
                 Path dst = to.resolve(from.relativize(src).toString());
+                if (Files.isSymbolicLink(src)) {
+                    // Files.walk does not descend a link, but isDirectory would report
+                    // the target as a directory and create an EMPTY folder here — the
+                    // mod then finds a blank profile where its data was. Better to
+                    // refuse loudly than to sync nothing silently.
+                    throw new IOException("refusing to copy through a symlink: " + src);
+                }
                 if (Files.isDirectory(src)) {
                     Files.createDirectories(dst);
                 } else {

@@ -59,6 +59,20 @@ public final class SyncEngine {
         this.modInstalled = modInstalled;
     }
 
+    /**
+     * True when every placeholder of this root has a value. A {@code {name}} root
+     * (Distant Horizons) with no remembered server-list name cannot be resolved,
+     * and guessing the root itself would mix every server's data together.
+     */
+    private boolean canResolve(ModSyncSpec.Root root, Map<String, String> v, String tag) {
+        if (root.resolvePrimary(gameDir, v) != null) {
+            return true;
+        }
+        Diag.warn("%s: root '%s' has no value for one of its placeholders in %s — skipped",
+                tag, root.path, v);
+        return false;
+    }
+
     /** Dir-shaped roots can be linked; per-file (prefix) roots cannot. */
     private boolean useSymlinks(ModSyncSpec.Root root) {
         return config.symlinkMode() && "dir".equals(root.mode);
@@ -90,29 +104,40 @@ public final class SyncEngine {
             serverNames.forEach(g::rememberName);
         }
         store.add(g); // throws if a server is already grouped
-        for (ModSyncSpec spec : activeSpecs()) {
-            for (ModSyncSpec.Root root : spec.roots) {
-                Files.createDirectories(syncDir(g.id, spec.modId, root));
+        try {
+            for (ModSyncSpec spec : activeSpecs()) {
+                for (ModSyncSpec.Root root : spec.roots) {
+                    Files.createDirectories(syncDir(g.id, spec.modId, root));
+                }
             }
-        }
-        // Seed from a snapshot: the live object is already in the store, and the
-        // seeding loop moves whole folders around. Editing the stored instance here
-        // meant a concurrent settings change could be lost (or the store could be
-        // rewritten mid-move) — the copy is merged back at the end and is the only
-        // thing written to groups.json.
-        Group working = g.copyOf();
-        for (String server : serverKeys) {
-            addServerToGroup(working, server, serverNames == null ? null : serverNames.get(server));
-        }
-        // A settings change may have re-added or replaced the live object while we
-        // worked; in that case the store is authoritative and must not be undone.
-        if (!store.contains(working.id)) {
-            Diag.warn("CREATE: group '%s' disappeared from the store while seeding — not restoring it",
-                    working.tag);
+            // Seed from a snapshot: the live object is already in the store, and the
+            // seeding loop moves whole folders around. Editing the stored instance here
+            // meant a concurrent settings change could be lost (or the store could be
+            // rewritten mid-move) — the copy is merged back at the end and is the only
+            // thing written to groups.json.
+            Group working = g.copyOf();
+            for (String server : serverKeys) {
+                addServerToGroup(working, server, serverNames == null ? null : serverNames.get(server));
+            }
+            // A settings change may have re-added or replaced the live object while we
+            // worked; in that case the store is authoritative and must not be undone.
+            if (!store.contains(working.id)) {
+                Diag.warn("CREATE: group '%s' disappeared from the store while seeding — not restoring it",
+                        working.tag);
+                return working;
+            }
+            store.update(working);
             return working;
+        } catch (IOException | RuntimeException e) {
+            // A group in groups.json with no folders (and servers that are now
+            // "already grouped") makes the wizard a dead end on retry. Remove it.
+            try {
+                store.remove(g);
+            } catch (IOException removeFailure) {
+                Diag.error("CREATE: could not roll back group " + g.id + " after a failed create", removeFailure);
+            }
+            throw e;
         }
-        store.update(working);
-        return working;
     }
 
     /** Fresh groups get a random hue so they are told apart at a glance. */
@@ -130,6 +155,9 @@ public final class SyncEngine {
             for (ModSyncSpec.Root root : spec.roots) {
                 String tag = spec.modId + "/" + root.syncName();
                 Path sync = syncDir(group.id, spec.modId, root);
+                if (!canResolve(root, v, tag)) {
+                    continue;
+                }
                 List<Path> existing = root.resolveExisting(gameDir, v);
                 Path local = existing.isEmpty() ? root.resolvePrimary(gameDir, v) : existing.get(0);
                 boolean localHasData = !existing.isEmpty() && DirOps.existsAndNonEmpty(local);
@@ -206,6 +234,9 @@ public final class SyncEngine {
                 Path sync = syncDir(group.id, spec.modId, root);
                 Map<String, String> v = vars(serverKey, serverName);
                 Diag.info("PULL %s: sync=%s", tag, Diag.describe(sync));
+                if (!canResolve(root, v, tag)) {
+                    continue;
+                }
 
                 if (useSymlinks(root)) {
                     List<Path> existing = root.resolveExisting(gameDir, v);
@@ -221,6 +252,22 @@ public final class SyncEngine {
                         // replacing it, otherwise the server's own map would be wiped.
                         Diag.info("PULL %s: group empty — adopting local data %s -> %s", tag, local, sync);
                         moveContentIn(local, sync);
+                    } else if (localHasData) {
+                        // Both sides hold data. addServerToGroup and convertOne keep such a
+                        // folder in _backups; deleting it here instead would be the one path
+                        // that silently throws away a server's own world data.
+                        if (DirOps.sameContent(local, sync)) {
+                            Diag.info("PULL %s: local %s already matches the group folder — replaced by the link",
+                                    tag, local);
+                        } else {
+                            Path backup = backupDir(group.id, serverKey, spec.modId, root);
+                            Diag.warn("PULL %s: group already has data — local %s moved to %s", tag, local, backup);
+                            for (Path entry : existing) {
+                                DirOps.moveTree(entry, backup.resolve(entry.getFileName().toString()));
+                            }
+                            existing = List.of();
+                            local = root.resolvePrimary(gameDir, v);
+                        }
                     } else if (Files.exists(local, LinkOption.NOFOLLOW_LINKS)) {
                         DirOps.deleteTree(local);
                     }
@@ -341,6 +388,9 @@ public final class SyncEngine {
                 }
 
                 List<Path> local = root.resolveExisting(gameDir, vars(serverKey, serverName));
+                if (!canResolve(root, vars(serverKey, serverName), tag)) {
+                    continue;
+                }
                 if (local.isEmpty()) {
                     Diag.info("PUSH %s: no local data for key='%s' — skipping", tag, serverKey);
                     continue;
@@ -376,7 +426,12 @@ public final class SyncEngine {
                         allOk = false;
                         continue;
                     }
-                    copyLocalIntoSync(entry, sync, root);
+                    // Only the copy itself is serialised with the join pull and the mode
+                    // conversion, not the waits above: holding the lock through a 30 s
+                    // quiescence wait would stall a join to any other server.
+                    synchronized (fsLock) {
+                        copyLocalIntoSync(entry, sync, root);
+                    }
                     wroteSomething = true;
                     Diag.info("PUSH %s: %s -> %s", tag, entry, Diag.describe(sync));
                     Diag.tree("PUSH " + tag + " sync", sync, 2);
@@ -408,7 +463,12 @@ public final class SyncEngine {
                 try (Stream<Path> markers = Files.list(modDir)) {
                     for (Path marker : (Iterable<Path>) markers
                             .filter(p -> p.getFileName().toString().startsWith(MARKER_PREFIX))::iterator) {
-                        String serverKey = marker.getFileName().toString().substring(MARKER_PREFIX.length());
+                        String serverKey = serverKeyOfMarker(group, marker);
+                        if (serverKey == null) {
+                            Diag.warn("RECOVERY: marker %s names no server of group '%s' — leaving it alone",
+                                    marker.getFileName(), group.tag);
+                            continue;
+                        }
                         handleDirtyMarker(group, modId, serverKey, marker);
                     }
                 }
@@ -416,6 +476,24 @@ public final class SyncEngine {
         } catch (IOException e) {
             Diag.error("Recovery scan failed for group " + group.id, e);
         }
+    }
+
+    /**
+     * The marker's own name is sanitized for the filesystem, so it cannot be used
+     * as the server key: ':' became '_', and every path derived from it (Xaero's
+     * Multiplayer_{host}, {name} roots) then points at nothing. The marker body
+     * carries the real key; older markers are matched back through the group.
+     */
+    private String serverKeyOfMarker(Group group, Path marker) {
+        String key = readMarkerKey(marker);
+        if (key != null && group.contains(key)) {
+            return key;
+        }
+        String suffix = marker.getFileName().toString().substring(MARKER_PREFIX.length());
+        return group.servers.stream()
+                .filter(k -> ServerKey.sanitize(k).equals(suffix))
+                .findFirst()
+                .orElse(null);
     }
 
     private void handleDirtyMarker(Group group, String modId, String serverKey, Path marker) {
@@ -432,6 +510,10 @@ public final class SyncEngine {
         boolean anyData = false;
         boolean needsRecovery = false;
         for (ModSyncSpec.Root root : spec.roots) {
+            String tag = modId + "/" + root.syncName();
+            if (!canResolve(root, vars(serverKey, serverName), tag)) {
+                continue;
+            }
             // Decide on the *physical* state, not on the configured mode: after a
             // mode switch the flag and the layout disagree, and a marker left by a
             // crashed copy-mode session must still be published even though the
@@ -450,10 +532,19 @@ public final class SyncEngine {
                 anyData = true;
                 Optional<String> suspect = IntegrityChecker.forName(spec.integrity).check(entry);
                 if (suspect.isPresent()) {
-                    // Spec §7.4: never push suspect data over the group copy.
+                    // Spec §7.4: never push suspect data over the group copy — and never
+                    // let the pull that follows this recovery delete it either, which is
+                    // what happens if it is merely skipped: keep it in _backups.
                     Diag.error(String.format("Crashed session left possibly-corrupt data for %s (%s): %s. "
-                                    + "NOT pushing it over the group copy. Inspect %s manually.",
-                            modId, serverKey, suspect.get(), entry));
+                                    + "NOT pushing it over the group copy; it is kept in _backups — inspect it there.",
+                            modId, serverKey, suspect.get()));
+                    try {
+                        Path backup = backupDir(group.id, serverKey, modId, root);
+                        DirOps.moveTree(entry, backup.resolve(entry.getFileName().toString()));
+                    } catch (IOException e) {
+                        Diag.error("RECOVERY: could not move suspect data aside, marker kept", e);
+                        return;
+                    }
                     continue;
                 }
                 try {
@@ -660,19 +751,19 @@ public final class SyncEngine {
 
     /** Spec §6: removing a server that leaves ≤1 participant dissolves the group. */
     public boolean removeServer(Group group, String serverKey, GroupsStore store) throws IOException {
-        // Snapshot before mutating: the server being removed also has a link into
-        // the group folder, and that folder is about to move to _dissolved — leaving
-        // its link dangling in the mod's data directory.
-        List<String> all = new ArrayList<>(group.servers);
-        group.servers.remove(serverKey);
-        boolean dissolved = group.servers.size() <= 1;
+        // Work on a copy: if the disk work throws, the caller's (live, stored)
+        // group must still match groups.json rather than losing a server on screen.
+        Group working = group.copyOf();
+        List<String> all = new ArrayList<>(working.servers);
+        working.servers.remove(serverKey);
+        boolean dissolved = working.servers.size() <= 1;
         if (dissolved) {
             // Everyone still pointing into the group folder (the removed server
             // included) needs a real directory before that folder moves away.
-            materializeLinks(group, all);
-            dissolve(group, store);
+            materializeLinks(working, all);
+            dissolve(working, store);
         } else {
-            store.update(group);
+            store.update(working);
         }
         return dissolved;
     }
@@ -788,10 +879,15 @@ public final class SyncEngine {
 
     private Path backupDir(String groupId, String serverKey, String modId, ModSyncSpec.Root root)
             throws IOException {
-        Path p = rootDir.resolve(groupId).resolve("_backups")
-                .resolve(ServerKey.sanitize(serverKey) + "_" + Instant.now().getEpochSecond())
-                .resolve(modId)
-                .resolve(root.syncName());
+        Path base = rootDir.resolve(groupId).resolve("_backups")
+                .resolve(ServerKey.sanitize(serverKey) + "_" + Instant.now().getEpochSecond());
+        // Two backups within the same second would otherwise land on the same name,
+        // and moveTree would then delete the first one.
+        Path stamp = base;
+        for (int i = 2; Files.exists(stamp, LinkOption.NOFOLLOW_LINKS); i++) {
+            stamp = base.resolveSibling(base.getFileName() + "_" + i);
+        }
+        Path p = stamp.resolve(modId).resolve(root.syncName());
         Files.createDirectories(p.getParent());
         return p;
     }
@@ -800,17 +896,26 @@ public final class SyncEngine {
         return rootDir.resolve(groupId).resolve(modId).resolve(MARKER_PREFIX + ServerKey.sanitize(serverKey));
     }
 
-    /** Marker file: first line = server-list name (needed for recovery of name-keyed mods), then timestamp. */
+    /** Marker file: server-list name, timestamp, then the real (un-sanitized) key. */
     private void writeMarker(Group group, String modId, String serverKey, String serverName) throws IOException {
         Files.writeString(markerPath(group.id, modId, serverKey),
-                (serverName == null ? "" : serverName) + "\n" + Instant.now());
+                (serverName == null ? "" : serverName) + "\n" + Instant.now() + "\n" + serverKey);
     }
 
     private String readMarkerName(Path marker) {
+        String content = readMarkerField(marker, 0);
+        return content == null || content.isEmpty() ? null : content;
+    }
+
+    private String readMarkerKey(Path marker) {
+        String key = readMarkerField(marker, 2);
+        return key == null || key.isBlank() ? null : key;
+    }
+
+    private String readMarkerField(Path marker, int index) {
         try {
-            String content = Files.readString(marker);
-            int nl = content.indexOf('\n');
-            return nl < 0 ? null : content.substring(0, nl);
+            String[] lines = Files.readString(marker).split("\n", -1);
+            return index < lines.length ? lines[index] : null;
         } catch (IOException e) {
             return null;
         }

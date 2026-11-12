@@ -11,7 +11,6 @@
   "syncgroups.create.tag": "Название (макс. 16 символов)",
   "syncgroups.create.confirm": "Создать",
   "syncgroups.create.failed": "Не удалось создать группу: %s",
-
   "syncgroups.config.title": "Настройки Sync Groups",
   "syncgroups.config.tags": "Метки групп: %s",
   "syncgroups.config.tags.tip": "Показывать название группы рядом с сервером в списке серверов.",
@@ -31,5 +30,10 @@
   "syncgroups.config.manage": "Управление группами",
   "syncgroups.config.manage.tip": "Список групп: посмотреть, создать новую или распустить.",
   "syncgroups.config.hint": "Наведите на кнопку, чтобы прочитать пояснение",
-  "syncgroups.create.color": "Цвет метки"
+  "syncgroups.create.color": "Цвет метки",
+  "syncgroups.pick.need": "Выберите минимум 2 сервера",
+  "syncgroups.manage.empty": "Групп пока нет — нажмите «Новая группа»",
+  "syncgroups.manage.failed": "Не удалось убрать сервер: %s",
+  "syncgroups.create.same": "Эти сохранённые серверы ведут на один адрес — выберите два разных",
+  "syncgroups.config.mode.nosupport": "Симлинки недоступны в этой системе — остаются копии (в Windows нужен режим разработчика)"
 }

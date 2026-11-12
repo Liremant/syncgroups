@@ -65,7 +65,7 @@ public class SyncGroupsMod implements ClientModInitializer {
         config = PathsConfig.loadOrCreate(root.resolve("paths.json"));
         store = new GroupsStore(root.resolve("groups.json"));
         engine = new SyncEngine(gameDir, root, config, FabricLoader.getInstance()::isModLoaded);
-        session = new SessionManager(engine, store, config.periodicPushMinutes * 60_000L);
+        session = new SessionManager(engine, store, config);
 
         Diag.info("CONFIG: periodicPushMinutes=%d storageCloseTimeoutSeconds=%d pushQuiescenceMs=%d "
                         + "syncMode=%s showGroupTags=%s",
@@ -164,7 +164,14 @@ public class SyncGroupsMod implements ClientModInitializer {
         Diag.info("READY: Sync Groups initialized with %d group(s)", store.all().size());
     }
 
-    private static void reconcileSyncModeAsync() {
+    private static synchronized void reconcileSyncModeAsync() {
+        if (modeThread != null && modeThread.isAlive()) {
+            // Two threads converting the same (server, root) units toward opposite
+            // targets is how a folder ends up half-link, half-copy. The running one
+            // re-reads the mode between units and will report the leftover.
+            Diag.info("MODE: a conversion is already running — not starting a second one");
+            return;
+        }
         Thread t = new Thread(SyncGroupsMod::reconcileSyncMode, "syncgroups-mode-convert");
         t.setDaemon(true);
         modeThread = t;
@@ -177,20 +184,31 @@ public class SyncGroupsMod implements ClientModInitializer {
      */
     private static void reconcileSyncMode() {
         boolean symlink = config.symlinkMode();
-        for (com.craftsync.syncgroups.core.Group g : store.all()) {
-            // Publish whatever a crashed session left behind *before* converting:
-            // in symlink mode the local folder is about to be shadowed by a link,
-            // and in copy mode the group copy may be the stale one.
-            engine.recoverDirtyMarkers(g);
-            String summary = engine.convertMode(g);
-            Diag.info("MODE: group '%s' -> %s (%s)", g.tag, symlink ? "symlink" : "copy", summary);
+        for (com.craftsync.syncgroups.core.Group live : store.all()) {
+            // A snapshot: the manage screen edits the live lists from the render
+            // thread, and a ConcurrentModificationException here would stop the
+            // conversion half-done with nothing in the log.
+            com.craftsync.syncgroups.core.Group g = live.copyOf();
+            try {
+                // Publish whatever a crashed session left behind *before* converting:
+                // in symlink mode the local folder is about to be shadowed by a link,
+                // and in copy mode the group copy may be the stale one.
+                engine.recoverDirtyMarkers(g);
+                String summary = engine.convertMode(g);
+                Diag.info("MODE: group '%s' -> %s (%s)", g.tag, symlink ? "symlink" : "copy", summary);
+            } catch (Exception e) {
+                Diag.error("MODE: conversion failed for group " + g.id + " — stopping", e);
+                session.setModePending(true);
+                return;
+            }
         }
         // Only clear the pending flag if the mode is still the one we converted to
         // (the user may have flipped it again while this ran).
         if (config.symlinkMode() == symlink) {
             session.setModePending(false);
         } else {
-            Diag.warn("MODE: mode changed again during conversion — a further conversion is due");
+            Diag.warn("MODE: mode changed again during conversion — another conversion is due");
+            session.setModePending(true);
         }
         Diag.info("MODE: conversion to %s finished", symlink ? "symlink" : "copy");
     }
@@ -225,6 +243,17 @@ public class SyncGroupsMod implements ClientModInitializer {
                     + "converted on the next game launch", config.syncMode);
             session.setModePending(true);
             return "deferred";
+        }
+        if (symlink) {
+            // Say so before the conversion silently does nothing: on Windows this
+            // needs Developer Mode, and the user would otherwise be told it applied.
+            String problem = DirOps.probeSymlinkSupport(
+                    FabricLoader.getInstance().getGameDir().resolve("config").resolve("syncgroups").resolve(".probe"));
+            if (problem != null) {
+                Diag.warn("MODE: this system cannot create symlinks (%s) — the setting is saved "
+                        + "but copies stay in use", problem);
+                return "nosupport";
+            }
         }
         reconcileSyncModeAsync();
         return symlink ? "applied.symlink" : "applied.copy";

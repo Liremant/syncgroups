@@ -23,6 +23,8 @@ public class SyncGroupsScreen extends Screen {
     private final Screen parent;
     private final List<Row> rows = new ArrayList<>();
     private int scroll;
+    /** Failure text; null while nothing is wrong. */
+    private Component error;
 
     private record Row(Group group, String serverKey) {
     }
@@ -44,6 +46,9 @@ public class SyncGroupsScreen extends Screen {
     @Override
     protected void init() {
         rebuildRows();
+        // Removing rows while scrolled used to leave the window past the end: an
+        // empty list with live buttons until the wheel moved.
+        scroll = Math.max(0, Math.min(scroll, Math.max(0, rows.size() - VISIBLE_ROWS)));
         int x0 = width / 2 - 150;
         for (int i = scroll; i < rows.size() && i < scroll + VISIBLE_ROWS; i++) {
             Row row = rows.get(i);
@@ -68,8 +73,12 @@ public class SyncGroupsScreen extends Screen {
             if (dissolved) {
                 SyncGroupsMod.LOGGER.info("Group '{}' dissolved", row.group().tag);
             }
+            error = null;
         } catch (IOException e) {
+            // Say it: otherwise the row disappears from the list while groups.json
+            // still has the server, and it comes back after a restart.
             SyncGroupsMod.LOGGER.error("Failed to remove server from group", e);
+            error = Component.translatable("syncgroups.manage.failed", String.valueOf(e.getMessage()));
         }
         rebuildWidgets();
     }
@@ -84,6 +93,12 @@ public class SyncGroupsScreen extends Screen {
             int y = 40 + (i - scroll) * ROW_HEIGHT;
             g.text(font, row.group().tag, x0, y + 5, row.group().colorInt());
             g.text(font, row.serverKey(), x0 + 70, y + 5, 0xB0B0B0);
+        }
+        if (rows.isEmpty()) {
+            g.centeredText(font, Component.translatable("syncgroups.manage.empty"), width / 2, 60, 0x909090);
+        }
+        if (error != null) {
+            g.centeredText(font, error, width / 2, height - 72, 0xFF5555);
         }
     }
 

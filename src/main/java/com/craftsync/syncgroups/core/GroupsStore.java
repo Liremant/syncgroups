@@ -64,7 +64,11 @@ public final class GroupsStore {
 
     public synchronized void save() throws IOException {
         Files.createDirectories(file.getParent());
-        Files.writeString(file, GSON.toJson(root));
+        // Temp + move: a truncated groups.json loads as "no groups", which would
+        // orphan every config/syncgroups/<gid> tree on disk.
+        Path tmp = file.resolveSibling(file.getFileName() + ".tmp");
+        Files.writeString(tmp, GSON.toJson(root));
+        Files.move(tmp, file, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
     }
 
     public synchronized List<Group> all() {
@@ -91,12 +95,26 @@ public final class GroupsStore {
             });
         }
         root.groups.add(group);
-        save();
+        try {
+            save();
+        } catch (IOException e) {
+            // Keep memory and disk in agreement: a group that only exists in memory
+            // makes every retry fail with "server already in group".
+            root.groups.remove(group);
+            throw e;
+        }
     }
 
     public synchronized void remove(Group group) throws IOException {
-        root.groups.removeIf(g -> g.id.equals(group.id));
-        save();
+        if (!root.groups.removeIf(g -> g.id.equals(group.id))) {
+            return;
+        }
+        try {
+            save();
+        } catch (IOException e) {
+            root.groups.add(group);
+            throw e;
+        }
     }
 
     public synchronized void update(Group group) throws IOException {
@@ -114,7 +132,12 @@ public final class GroupsStore {
         if (idx < 0) {
             throw new IOException("group " + group.id + " is not in the store");
         }
-        root.groups.set(idx, group);
-        save();
+        Group previous = root.groups.set(idx, group);
+        try {
+            save();
+        } catch (IOException e) {
+            root.groups.set(idx, previous);
+            throw e;
+        }
     }
 }

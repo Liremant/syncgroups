@@ -90,8 +90,18 @@ public class CreateGroupScreen extends Screen {
             Map<String, String> names = new LinkedHashMap<>();
             for (ServerData server : servers) {
                 String key = ServerKey.normalize(server.ip);
+                // Two saved entries can point at the same address; a duplicated key
+                // would put the same server in the group twice and dissolve the whole
+                // group on the first Remove.
+                if (names.containsKey(key)) {
+                    continue;
+                }
                 keys.add(key);
                 names.put(key, server.name);
+            }
+            if (keys.size() < 2) {
+                error = Component.translatable("syncgroups.create.same");
+                return;
             }
             Group group = SyncGroupsMod.engine().createGroup(tag, picker.colorInt(), keys, names, SyncGroupsMod.store());
             SyncGroupsMod.LOGGER.info("Created sync group '{}' ({}) for {} server(s)", tag, group.id, keys.size());
@@ -114,10 +124,18 @@ public class CreateGroupScreen extends Screen {
         g.text(font, Component.translatable("syncgroups.create.color"), pickerX(), 40, 0xA0A0A0);
         int rx = pickerX() + ColorPicker.layoutWidth(PICKER_W) + COLUMN_GAP;
         g.text(font, Component.translatable("syncgroups.create.tag"), rx, 60, 0xA0A0A0);
-        if (error != null) {
-            g.centeredText(font, error, width / 2, 156, 0xFF5555);
-        }
         picker.draw(g, font);
+        if (error != null) {
+            // After the picker and below the swatch: at y=156 the message was painted
+            // underneath the SV square, so a rejected create looked like a dead click.
+            List<net.minecraft.util.FormattedCharSequence> lines =
+                    font.split(error, Math.max(120, width - 40));
+            int ey = 50 + PICKER_H + 10 + 16 + 10;
+            for (net.minecraft.util.FormattedCharSequence line : lines) {
+                g.centeredText(font, line, width / 2, ey, 0xFF5555);
+                ey += font.lineHeight;
+            }
+        }
     }
 
     private int pickerX() {

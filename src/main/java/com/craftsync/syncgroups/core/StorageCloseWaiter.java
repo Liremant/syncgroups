@@ -18,8 +18,9 @@ import java.util.stream.Stream;
  * - "probe-lock": repeatedly tries to open every regular file READ/WRITE and
  *   take an OS lock. On Linux SQLite does not hold POSIX locks while idle, so
  *   a success here does NOT prove the handle is closed — it only proves files
- *   are writable. We additionally require the -wal/-shm sidecar quiescence
- *   (no size change across a probe interval) before declaring "probably safe".
+ *   are unlocked and writable. A lock held by our own JVM's native library
+ *   (RocksDB) is invisible to it too, because POSIX scopes fcntl locks per
+ *   process. Treat the result as a hint; the quiescence wait is the real guard.
  * - Mods that expose a real shutdown hook should register a listener via
  *   {@link #registerListener} instead — probe mode is the fallback, not the goal.
  */
@@ -134,11 +135,22 @@ public final class StorageCloseWaiter {
 
     private static boolean writableAndLockable(Path p) {
         try (RandomAccessFile raf = new RandomAccessFile(p.toFile(), "rw");
-             FileChannel ch = raf.getChannel();
-             FileLock ignored = ch.tryLock()) {
+             FileChannel ch = raf.getChannel()) {
+            // tryLock returns null (it does not throw) when somebody else holds the
+            // lock, so binding it to try-with-resources used to report exactly the
+            // "still held" case as safe.
+            FileLock lock = ch.tryLock();
+            if (lock == null) {
+                return false;
+            }
+            lock.release();
+            return true;
+        } catch (java.nio.file.AccessDeniedException e) {
+            // A read-only file cannot be a mod's live write handle, and we only read
+            // it while copying. Not a reason to block every future push.
             return true;
         } catch (IOException e) {
-            return false; // still held by someone
+            return false; // locked by another process, or otherwise unavailable
         }
     }
 }

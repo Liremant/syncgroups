@@ -11,7 +11,6 @@
   "syncgroups.create.tag": "Tag (max 16 chars)",
   "syncgroups.create.confirm": "Create",
   "syncgroups.create.failed": "Could not create the group: %s",
-
   "syncgroups.config.title": "Sync Groups settings",
   "syncgroups.config.tags": "Group tags: %s",
   "syncgroups.config.tags.tip": "Show the group name next to a server in the multiplayer list.",
@@ -31,5 +30,10 @@
   "syncgroups.config.manage": "Manage groups",
   "syncgroups.config.manage.tip": "Group list: review, create a new one or dissolve one.",
   "syncgroups.config.hint": "Hover a button to read what it does",
-  "syncgroups.create.color": "Tag color"
+  "syncgroups.create.color": "Tag color",
+  "syncgroups.pick.need": "Select at least 2 servers",
+  "syncgroups.manage.empty": "No groups yet — press “New group”",
+  "syncgroups.manage.failed": "Could not remove the server: %s",
+  "syncgroups.create.same": "Those saved servers point at the same address — pick two different ones",
+  "syncgroups.config.mode.nosupport": "Symlinks are unavailable on this system — copies stay in use (Windows needs Developer Mode)"
 }

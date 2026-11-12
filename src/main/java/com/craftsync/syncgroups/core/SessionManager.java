@@ -1,5 +1,7 @@
 package com.craftsync.syncgroups.core;
 
+import com.craftsync.syncgroups.integration.PathsConfig;
+
 import java.io.IOException;
 import java.util.List;
 import java.util.Optional;
@@ -11,31 +13,39 @@ import java.util.Optional;
  *
  * Every branch here is logged through {@link Diag} — when sync silently does
  * nothing on someone else's machine, this is the only evidence we get.
+ *
+ * The join hooks fire on different threads (render thread for ConnectScreen,
+ * netty for INIT), and the push runs on its own thread. State transitions are
+ * guarded by the monitor; the pull itself deliberately is not, because a pull
+ * can take seconds and the render thread reads this state every tick.
  */
 public final class SessionManager {
 
     private final SyncEngine engine;
     private final GroupsStore store;
-    private final long periodicPushMs;
+    private final PathsConfig config;
 
     private Group currentGroup;
     private String currentServerKey;
     private String currentServerName;
     private long lastPushAt;
-    private boolean pullDone;
+    /** Read from the INIT/JOIN/tick hooks without holding the monitor. */
+    private volatile boolean pullDone;
+    /** Key whose pull is running right now, so a second hook does not repeat it. */
+    private String pullingFor;
     private volatile Thread pushThread;
     /** Set when a mode switch was deferred because a session was open. */
     private boolean modePending;
     /** Serialises pushes: the periodic one and the disconnect one must not overlap on the same files. */
     private final Object pushLock = new Object();
 
-    public SessionManager(SyncEngine engine, GroupsStore store, long periodicPushMs) {
+    public SessionManager(SyncEngine engine, GroupsStore store, PathsConfig config) {
         this.engine = engine;
         this.store = store;
-        this.periodicPushMs = periodicPushMs;
+        this.config = config;
     }
 
-    public Optional<Group> currentGroup() {
+    public synchronized Optional<Group> currentGroup() {
         return Optional.ofNullable(currentGroup);
     }
 
@@ -62,54 +72,83 @@ public final class SessionManager {
     }
 
     /** Called before connecting (ConnectScreen) or at INIT as a fallback. */
-    public synchronized boolean onLogin(String address, String serverName) {
+    public boolean onLogin(String address, String serverName) {
         if (address == null || address.isBlank()) {
             Diag.warn("JOIN: empty address (name='%s') — nothing to do", serverName);
             return false;
         }
         String key = ServerKey.normalize(address);
-        List<Group> all = store.all();
-        Diag.info("JOIN: address='%s' name='%s' -> key='%s'; known groups=%d, servers=%s",
-                address, serverName, key, all.size(), allServers(all));
+        Group group;
+        synchronized (this) {
+            List<Group> all = store.all();
+            Diag.info("JOIN: address='%s' name='%s' -> key='%s'; known groups=%d, servers=%s",
+                    address, serverName, key, all.size(), allServers(all));
 
-        if (pullDone && key.equals(currentServerKey)) {
-            Diag.info("JOIN: already pulled for key='%s' in this session — skipping duplicate pull", key);
-            return true;
+            if (pullDone && key.equals(currentServerKey)) {
+                Diag.info("JOIN: already pulled for key='%s' in this session — skipping duplicate pull", key);
+                return true;
+            }
+            if (key.equals(pullingFor)) {
+                Diag.info("JOIN: pull for key='%s' is already running — not repeating it", key);
+                return false;
+            }
+            Optional<Group> match = store.byServer(key);
+            if (match.isEmpty()) {
+                Diag.info("JOIN: no group contains key='%s' — sync not applicable for this server", key);
+                // A connect that never reached a world fires no DISCONNECT: without
+                // this, that stale session would keep pushing and would block the
+                // deferred mode conversion for the server we are actually on.
+                clearSessionLocked();
+                return false;
+            }
+            Diag.info("JOIN: matched group '%s' (id=%s, color=%s) for key='%s'",
+                    match.get().tag, match.get().id, match.get().color, key);
+            group = match.get();
+            pullingFor = key;
         }
-
-        Optional<Group> group = store.byServer(key);
-        if (group.isEmpty()) {
-            Diag.info("JOIN: no group contains key='%s' — sync not applicable for this server", key);
-            return false;
-        }
-        Diag.info("JOIN: matched group '%s' (id=%s, color=%s) for key='%s'",
-                group.get().tag, group.get().id, group.get().color, key);
 
         long start = System.currentTimeMillis();
         try {
-            engine.pullForJoin(group.get(), key, serverName);
+            engine.pullForJoin(group, key, serverName);
         } catch (Exception e) {
-            Diag.error("JOIN: pull FAILED for key='" + key + "' group=" + group.get().id, e);
+            Diag.error("JOIN: pull FAILED for key='" + key + "' group=" + group.id, e);
+            synchronized (this) {
+                pullingFor = null;
+            }
             return false;
         }
-        currentGroup = group.get();
-        currentServerKey = key;
-        currentServerName = serverName;
-        lastPushAt = System.currentTimeMillis();
-        pullDone = true;
+        synchronized (this) {
+            pullingFor = null;
+            currentGroup = group;
+            currentServerKey = key;
+            currentServerName = serverName;
+            lastPushAt = System.currentTimeMillis();
+            pullDone = true;
+        }
         // Keep the name on record: name-keyed mods (Distant Horizons) and crash
         // recovery need it for servers that are not the current session.
-        if (group.get().rememberName(key, serverName)) {
+        if (group.rememberName(key, serverName)) {
             try {
-                store.update(group.get());
+                store.update(group);
                 Diag.info("JOIN: remembered server name '%s' for key='%s'", serverName, key);
             } catch (IOException e) {
                 Diag.error("JOIN: could not persist server name for key=" + key, e);
             }
         }
         Diag.info("JOIN: pull finished in %d ms for group '%s'",
-                System.currentTimeMillis() - start, group.get().tag);
+                System.currentTimeMillis() - start, group.tag);
         return true;
+    }
+
+    private void clearSessionLocked() {
+        if (currentGroup != null) {
+            Diag.warn("JOIN: dropping the session for key='%s' — no group matches it any more",
+                    currentServerKey);
+        }
+        currentGroup = null;
+        currentServerKey = null;
+        currentServerName = null;
+        pullDone = false;
     }
 
     private static String allServers(List<Group> groups) {
@@ -125,6 +164,9 @@ public final class SessionManager {
 
     /** Called on END_CLIENT_TICK; fires the periodic push on a worker thread. */
     public synchronized void tick() {
+        // Read live: the settings screen changes this value and the tooltip promises
+        // it takes effect, not "on the next launch".
+        long periodicPushMs = Math.max(1, config.periodicPushMinutes) * 60_000L;
         if (currentGroup == null || System.currentTimeMillis() - lastPushAt < periodicPushMs) {
             return;
         }
@@ -153,10 +195,7 @@ public final class SessionManager {
         Group group = currentGroup;
         String key = currentServerKey;
         String name = currentServerName;
-        currentGroup = null;
-        currentServerKey = null;
-        currentServerName = null;
-        pullDone = false;
+        clearSessionLocked();
         Diag.info("DISCONNECT: pushing for key='%s' group='%s'", key, group.tag);
         runAsync(() -> {
             synchronized (pushLock) {

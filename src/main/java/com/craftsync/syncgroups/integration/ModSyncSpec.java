@@ -67,29 +67,55 @@ public class ModSyncSpec {
             if (!Files.isDirectory(root)) {
                 return List.of();
             }
+            String name = substitute(pattern, vars);
+            if (name == null) {
+                return List.of();
+            }
             if ("prefix".equals(mode)) {
-                String prefix = safe(substitute(pattern, vars));
+                String prefix = safe(name);
                 try (Stream<Path> s = Files.list(root)) {
                     return s.filter(p -> p.getFileName().toString().startsWith(prefix)).toList();
                 } catch (Exception e) {
                     return List.of();
                 }
             }
-            Path p = root.resolve(safe(substitute(pattern, vars)));
+            Path p = root.resolve(safe(name));
             return Files.isDirectory(p) ? List.of(p) : List.of();
         }
 
-        /** Where to place pulled data when nothing local exists yet. */
+        /**
+         * Where to place pulled data when nothing local exists yet, or null when
+         * the root cannot be resolved (no value for one of its placeholders).
+         * Never falls back to the root directory itself: {@code root.resolve("")}
+         * is the whole root, so a missing {@code {name}} would otherwise pull one
+         * server's Distant Horizons folder over every other server's.
+         */
         public Path resolvePrimary(Path gameDir, Map<String, String> vars) {
-            return gameDir.resolve(path).resolve(safe(substitute(pattern, vars)));
+            String name = substitute(pattern, vars);
+            if (name == null) {
+                return null;
+            }
+            return gameDir.resolve(path).resolve(safe(name));
         }
 
+        /**
+         * Null when a placeholder this pattern uses has no value. {@code {port}}
+         * may legitimately be empty (an address without a port); the others may
+         * not, because an empty value resolves to the shared root directory.
+         */
         private static String substitute(String pattern, Map<String, String> vars) {
-            return pattern
-                    .replace("{server}", vars.getOrDefault("server", ""))
-                    .replace("{host}", vars.getOrDefault("host", ""))
-                    .replace("{port}", vars.getOrDefault("port", ""))
-                    .replace("{name}", vars.getOrDefault("name", ""));
+            String s = pattern;
+            for (String ph : new String[]{"name", "server", "host"}) {
+                if (!s.contains("{" + ph + "}")) {
+                    continue;
+                }
+                String value = vars.get(ph);
+                if (value == null || value.isBlank()) {
+                    return null;
+                }
+                s = s.replace("{" + ph + "}", value);
+            }
+            return s.replace("{port}", vars.getOrDefault("port", ""));
         }
 
         private static String safe(String name) {
