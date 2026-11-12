@@ -9,6 +9,7 @@ import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -626,6 +627,12 @@ public final class SyncEngine {
         Diag.info("MODE: converting group '%s' (%s) to %s", group.tag, group.id,
                 toSymlink ? "symlink" : "copy");
         for (ModSyncSpec spec : activeSpecs()) {
+            // The marker protects every dir root of this (mod, server): it can go only
+            // when all of them are converted. Deleting it after the first root would
+            // make a later root file the crashed session's newest data into _backups
+            // instead of publishing it.
+            Map<String, Boolean> markersClear = new HashMap<>();
+            group.servers.forEach(k -> markersClear.put(k, true));
             for (ModSyncSpec.Root root : spec.roots) {
                 String tag = spec.modId + "/" + root.syncName();
                 if (!"dir".equals(root.mode)) {
@@ -638,6 +645,7 @@ public final class SyncEngine {
                 } catch (IOException e) {
                     Diag.error("MODE: cannot resolve sync dir for " + tag, e);
                     skipped++;
+                    group.servers.forEach(k -> markersClear.put(k, false));
                     continue;
                 }
                 for (String serverKey : group.servers) {
@@ -656,6 +664,7 @@ public final class SyncEngine {
                         Diag.warn("MODE %s: no remembered name for key='%s' — skipped (will convert on its next join)",
                                 tag, serverKey);
                         skipped++;
+                        markersClear.put(serverKey, false);
                         continue;
                     }
                     String status;
@@ -670,8 +679,16 @@ public final class SyncEngine {
                         case "detached" -> detached++;
                         case "already" -> already++;
                         case "none" -> { /* nothing on disk yet: not a skip, a no-op */ }
-                        default -> skipped++;
+                        default -> {
+                            skipped++;
+                            markersClear.put(serverKey, false);
+                        }
                     }
+                }
+            }
+            for (Map.Entry<String, Boolean> e : markersClear.entrySet()) {
+                if (e.getValue()) {
+                    quietDelete(markerPath(group.id, spec.modId, e.getKey()));
                 }
             }
         }
@@ -740,8 +757,6 @@ public final class SyncEngine {
                     }
                 }
                 DirOps.replaceWithRelativeSymlink(local, sync);
-                // Nothing left to recover once the local path IS the group folder.
-                quietDelete(markerPath(group.id, spec.modId, serverKey));
                 Diag.info("MODE %s: linked %s -> %s", tag, local, sync);
                 return "linked";
             }
@@ -808,17 +823,22 @@ public final class SyncEngine {
         List<String> all = new ArrayList<>(working.servers);
         working.servers.remove(serverKey);
         boolean dissolved = working.servers.size() <= 1;
-        if (dissolved) {
-            // Copying the shared folder out can take minutes, and a concurrent join
-            // pull or push touches the same paths — same lock as they use.
-            synchronized (fsLock) {
+        synchronized (fsLock) {
+            if (dissolved) {
+                // Copying the shared folder out can take minutes, and a concurrent join
+                // pull or push touches the same paths — same lock as they use.
                 // Everyone still pointing into the group folder (the removed server
                 // included) needs a real directory before that folder moves away.
                 materializeLinks(working, all);
                 dissolve(working, store);
+            } else {
+                // Symlink mode: the removed server's folders are links into the group's
+                // shared folder. Nothing else ever detaches them (the key is no longer
+                // grouped, so pulls and conversions skip it), and leaving them would
+                // make that server keep writing into the group's data.
+                materializeLinks(working, List.of(serverKey));
+                store.update(working);
             }
-        } else {
-            store.update(working);
         }
         return dissolved;
     }

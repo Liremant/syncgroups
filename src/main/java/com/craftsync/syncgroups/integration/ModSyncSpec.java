@@ -68,7 +68,9 @@ public class ModSyncSpec {
                 return List.of();
             }
             String name = substitute(pattern, vars);
-            if (name == null) {
+            // A pattern of only {port} (empty by design) would resolve to the root
+            // itself and make one server's data the sync source for all of them.
+            if (name == null || name.isBlank()) {
                 return List.of();
             }
             if ("prefix".equals(mode)) {
@@ -92,7 +94,7 @@ public class ModSyncSpec {
          */
         public Path resolvePrimary(Path gameDir, Map<String, String> vars) {
             String name = substitute(pattern, vars);
-            if (name == null) {
+            if (name == null || name.isBlank()) {
                 return null;
             }
             return gameDir.resolve(path).resolve(safe(name));
@@ -124,6 +126,8 @@ public class ModSyncSpec {
             // '%' is allowed so mod-specific escapes (e.g. Xaero's %us%) survive intact.
             // Dots are kept (Xaero's Multiplayer_mc.example.com) but a ".." is not a
             // name: a server-list entry called ".." would otherwise escape the root.
+            // Known limit: ".." -> "__" can collide ("a..b" vs "a__b") in one sync
+            // folder; a real server name with ".." is rare enough to accept.
             return name.replace("..", "__").replaceAll("[^a-zA-Z0-9._% -]", "_");
         }
     }

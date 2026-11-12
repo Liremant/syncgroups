@@ -284,13 +284,19 @@ public class SyncGroupsMod implements ClientModInitializer {
         }
     }
 
-    /** Persists config edits made in the Mod Menu screen. */
-    public static void saveConfig() {
+    /**
+     * Persists config edits made in the Mod Menu screen. Returns false when the
+     * write failed: the settings screen then has to say so, or the player believes
+     * a mode change was saved that a restart silently undoes.
+     */
+    public static boolean saveConfig() {
         try {
             PathsConfig.save(FabricLoader.getInstance().getGameDir()
                     .resolve("config").resolve("syncgroups").resolve("paths.json"), config);
+            return true;
         } catch (Exception e) {
             Diag.error("CONFIG: failed to save from settings screen", e);
+            return false;
         }
     }
 

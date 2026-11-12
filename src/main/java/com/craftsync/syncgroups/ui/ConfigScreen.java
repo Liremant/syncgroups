@@ -40,7 +40,9 @@ public class ConfigScreen extends Screen {
         addRenderableWidget(Button.builder(tagsLabel(cfg), b -> {
             cfg.showGroupTags = !cfg.showGroupTags;
             b.setMessage(tagsLabel(cfg));
-            SyncGroupsMod.saveConfig();
+            if (!SyncGroupsMod.saveConfig()) {
+                status = Component.translatable("syncgroups.config.saveFailed");
+            }
         }).tooltip(tip("syncgroups.config.tags.tip")).bounds(cx, y, w, h).build());
         y += gap;
 
@@ -62,7 +64,9 @@ public class ConfigScreen extends Screen {
                 default -> 1;
             };
             b.setMessage(pushLabel(cfg));
-            SyncGroupsMod.saveConfig();
+            if (!SyncGroupsMod.saveConfig()) {
+                status = Component.translatable("syncgroups.config.saveFailed");
+            }
         }).tooltip(tip("syncgroups.config.push.tip")).bounds(cx, y, w, h).build());
         y += gap + 8;
 
@@ -116,16 +120,23 @@ public class ConfigScreen extends Screen {
         super.extractRenderState(g, mouseX, mouseY, partialTick);
         g.centeredText(font, title, width / 2, 16, 0xFFFFFF);
         if (status != null) {
-            // Sits in the gap between the push button (ends at 116) and the
-            // folder button (starts at 130), so it never covers a control.
-            g.centeredText(font, status, width / 2, 118, 0xE0C060);
+            // centeredText does not wrap; a long "nosupport" line overflowed the
+            // 427px minimum window width. Same treatment as the create error.
+            int sy = 118;
+            for (var line : font.split(status, Math.max(200, width - 40))) {
+                g.centeredText(font, line, width / 2, sy, 0xE0C060);
+                sy += font.lineHeight;
+            }
         }
         g.centeredText(font, Component.translatable("syncgroups.config.hint"), width / 2, height - 46, 0x909090);
     }
 
     @Override
     public void onClose() {
-        SyncGroupsMod.saveConfig();
-        minecraft.setScreenAndShow(parent);
+        if (!SyncGroupsMod.saveConfig()) {
+            status = Component.translatable("syncgroups.config.saveFailed");
+        } else {
+            minecraft.setScreenAndShow(parent);
+        }
     }
 }

@@ -38,6 +38,8 @@ public class CreateGroupScreen extends Screen {
     private int initialColor;
     /** Shown under the buttons when creation failed; null while everything is fine. */
     private Component error;
+    /** Typed tag, restored across init() (window resize rebuilds the box empty). */
+    private String tagText = "";
 
     public CreateGroupScreen(Screen parent, Screen doneScreen, List<ServerData> servers) {
         super(Component.translatable("syncgroups.create.title"));
@@ -65,6 +67,7 @@ public class CreateGroupScreen extends Screen {
 
         tagBox = new EditBox(font, rx, 70, COLUMN_W, 20, Component.translatable("syncgroups.create.tag"));
         tagBox.setMaxLength(16);
+        tagBox.setValue(tagText); // resize rebuilds the box empty; keep what was typed
         addRenderableWidget(tagBox);
 
         // Cancel sits above Create: the primary action takes the bottom slot,
@@ -75,8 +78,7 @@ public class CreateGroupScreen extends Screen {
         Button create = Button.builder(Component.translatable("syncgroups.create.confirm"), b -> onCreate())
                 .bounds(rx, 128, COLUMN_W, 20)
                 .build();
-        create.active = false;
-        tagBox.setResponder(s -> create.active = !s.isBlank());
+        create.active = !tagText.isBlank();
         addRenderableWidget(create);
     }
 

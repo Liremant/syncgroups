@@ -27,6 +27,7 @@ public class SyncGroupsScreen extends Screen {
     private int scroll;
     /** Failure text; null while nothing is wrong. */
     private Component error;
+    private Button newGroup;
     /**
      * Removal (and, at two servers, the whole dissolve) copies whole folders, so it
      * runs off the render thread — materialising a Bobby/DH group is hundreds of
@@ -76,9 +77,18 @@ public class SyncGroupsScreen extends Screen {
         addRenderableWidget(Button.builder(Component.translatable("syncgroups.manage.new"), b -> minecraft.setScreenAndShow(new ServerPickScreen(this, parent)))
                 .bounds(width / 2 - 100, height - 52, 200, 20)
                 .build());
-        addRenderableWidget(Button.builder(Component.translatable("gui.done"), b -> onClose())
+        newGroup = Button.builder(Component.translatable("syncgroups.manage.new"), b -> minecraft.setScreenAndShow(new ServerPickScreen(this, parent)))
+                .bounds(width / 2 - 100, height - 52, 200, 20)
+                .build();
+        addRenderableWidget(newGroup);
+        Button done = Button.builder(Component.translatable("gui.done"), b -> onClose())
                 .bounds(width / 2 - 100, height - 28, 200, 20)
-                .build());
+                .build();
+        // A dissolve copies whole folders in the background; every action that could
+        // touch the same groups waits until it is done.
+        done.active = !busy;
+        newGroup.active = !busy;
+        addRenderableWidget(done);
     }
 
     /**
@@ -149,8 +159,9 @@ public class SyncGroupsScreen extends Screen {
         for (int i = scroll; i < rows.size() && i < scroll + VISIBLE_ROWS; i++) {
             Row row = rows.get(i);
             int y = 40 + (i - scroll) * ROW_HEIGHT;
-            g.text(font, row.group().tag, x0, y + 5, row.group().colorInt());
-            g.text(font, row.serverKey(), x0 + 70, y + 5, 0xB0B0B0);
+            int keyWidth = x0 + 300 - 100 - (x0 + 70); // stop before the Remove button
+            g.text(font, clip(font, row.group().tag, 70 - 4), x0, y + 5, row.group().colorInt());
+            g.text(font, clip(font, row.serverKey(), keyWidth), x0 + 70, y + 5, 0xB0B0B0);
         }
         if (rows.isEmpty()) {
             g.centeredText(font, Component.translatable("syncgroups.manage.empty"), width / 2, 60, 0x909090);
@@ -161,6 +172,18 @@ public class SyncGroupsScreen extends Screen {
         } else if (error != null) {
             g.centeredText(font, error, width / 2, height - 72, 0xFF5555);
         }
+    }
+
+    /** Fits one line into a pixel budget, with an ellipsis when cut. */
+    private static String clip(net.minecraft.client.gui.Font font, String text, int maxWidth) {
+        if (font.width(text) <= maxWidth) {
+            return text;
+        }
+        String cut = text;
+        while (!cut.isEmpty() && font.width(cut + "…") > maxWidth) {
+            cut = cut.substring(0, cut.length() - 1);
+        }
+        return cut + "…";
     }
 
     @Override

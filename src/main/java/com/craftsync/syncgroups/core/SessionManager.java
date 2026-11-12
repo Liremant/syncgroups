@@ -126,11 +126,15 @@ public final class SessionManager {
             }
         }
         synchronized (this) {
-            if (pullingFor != null && !key.equals(pullingFor)) {
-                // Another join superseded this one while the pull was running (the
-                // player cancelled and connected somewhere else). Committing here
-                // would leave the session pointing at the server they left.
-                Diag.warn("JOIN: pull for key='%s' was superseded by '%s' — not applying it", key, pullingFor);
+            // A newer pull can supersede this one in two ways: while it still runs
+            // (pullingFor points at it) or after it already committed (currentServerKey
+            // moved on). Committing a stale pull would point the session — and every
+            // later push — at the server the player left.
+            boolean superseded = (pullingFor != null && !key.equals(pullingFor))
+                    || (currentServerKey != null && !key.equals(currentServerKey));
+            if (superseded) {
+                Diag.warn("JOIN: pull for key='%s' was superseded (pulling=%s, session=%s) — not applying it",
+                        key, pullingFor, currentServerKey);
                 return false;
             }
             currentGroup = group;

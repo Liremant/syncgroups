@@ -42,5 +42,6 @@
   "syncgroups.pick.needTwo": "Save at least 2 servers in the multiplayer list first",
   "syncgroups.manage.confirm.title": "Dissolve the group?",
   "syncgroups.manage.confirm.message": "Removing %2$s leaves '%1$s' with one server, so the group is dissolved. Every remaining server gets its own copy of the shared data — that can take a while with large map caches.",
-  "syncgroups.manage.busy": "Copying the shared data out of the group — do not quit the game"
+  "syncgroups.manage.busy": "Copying the shared data out of the group — do not quit the game",
+  "syncgroups.config.saveFailed": "Could not write paths.json — changes are in effect but will be lost on restart"
 }
