@@ -59,9 +59,9 @@ folder hold data and they differ, the local one is moved to `_backups/`.
 | Xaero's Minimap (25.3+) | `xaero/minimap/Multiplayer_<host>/` |
 | Xaero's World Map (1.39+) | `xaero/world-map/Multiplayer_<host>/` |
 | Litematica | `config/litematica/litematica_<address>*.json`, `area_selections_per_world/<address>/` |
-| Bobby | `.bobby/<address>/` |
+| Bobby | `.bobby/<address with ':' as '_'>/` |
 | Distant Horizons | `Distant_Horizons_server_data/<server list name>/` |
-| Voxy (0.2.x) | `.voxy/saves/<address>/` |
+| Voxy (0.2.x) | `.voxy/saves/<address with ':' as '_'>/` |
 
 Voxy nests a hash of the world seed and dimension *inside* its per-server
 folder. That inner layer is never derived by the mod: it is whatever Voxy wrote
@@ -73,12 +73,13 @@ genuinely shared.
 Every path above can be overridden in `paths.json` (see below) if a mod update
 moves something.
 
-`paths.json` carries a `configVersion`. When a built-in default changes in a way
-existing files must pick up, the version is bumped: the old file is moved to
-`paths.v<N>.bak` and a fresh one is written with your settings carried over, so
-hand edits to paths need re-applying. A root you clear (empty `roots`) is a real
-opt-out and stays cleared; only a mod that used to ship without roots (Voxy) gets
-them back on a bump.
+`paths.json` carries a `configVersion`, and a bump makes the mod regenerate the
+file: the old one is moved to `paths.v<the old file's version>.bak` (a file that
+predates the key counts as v1) and written back with every setting and path you
+had, so hand edits survive. What a bump adds is the built-in defaults for mods
+that are new in that version, or that used to ship without roots (Voxy). A spec
+already in your file keeps its paths, and a `roots` you cleared is a real opt-out
+and stays cleared.
 
 ## Where the files are
 
@@ -103,13 +104,14 @@ Mod Menu → Sync Groups, or edit `paths.json` by hand:
 | --- | --- | --- |
 | `syncMode` | `copy` | `copy` or `symlink` |
 | `periodicPushMinutes` | `5` | How often the local folder is pushed while playing |
-| `storageCloseTimeoutSeconds` | `30` | How long to wait for a mod to close its files on leave |
+| `storageCloseTimeoutSeconds` | `30` | How long to wait for a mod to close its files on leave; a push can spend it twice, once waiting for quiet and once for closure |
 | `pushQuiescenceMs` | `1500` | How long files must stop changing before a push counts as safe |
 | `showGroupTags` | `true` | Draw the group tag next to a server in the list |
 
-The three timing values exist because Xaero and Bobby have no "I closed my
-storage" event. The mod watches the files instead. On a slow disk, or with very
-large world-map data, raising them is the fix for pushes that get skipped.
+The three timing values exist because Xaero, Bobby, Distant Horizons and Voxy
+have no "I closed my storage" event we can use. The mod watches the files
+instead. On a slow disk, or with very large world-map data, raising them is the
+fix for pushes that get skipped.
 
 ## Troubleshooting
 

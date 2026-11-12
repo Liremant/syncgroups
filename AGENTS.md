@@ -136,8 +136,8 @@ caches) is shared across the group as if it were one server (full spec: the
 ## Domain facts (verified Sept 2026 against mod sources/bytecode)
 
 - Supported-mod paths live in `ModSpecs` defaults and are user-overridable in
-  `.minecraft/syncgroups/paths.json` (regenerated on first run). Do not
-  hardcode paths elsewhere.
+  `config/syncgroups/paths.json` inside the game dir (regenerated on first
+  run). Do not hardcode paths elsewhere.
 - Xaero (≥ Minimap 25.3 / World Map 1.39): `xaero/minimap`,
   `xaero/world-map`, key `Multiplayer_<host-without-port>`. Legacy roots
   `XaeroWaypoints/`/`XaeroWorldMap/` are pre-2025 only.
@@ -167,7 +167,9 @@ caches) is shared across the group as if it were one server (full spec: the
   last-write-wins, so symlink mode is the honest choice for Voxy. RocksDB does
   hold `storage/LOCK` while open, but probe-lock cannot see it: fcntl locks are
   per-process (so a lock our own JVM's native lib holds is invisible) and the
-  probe itself discards `tryLock`'s null. The real guard is the quiescence wait.
+  probe itself discards `tryLock`'s null. So the only guard is the quiescence
+  wait, and it is best-effort: `SyncEngine.push` logs the result and copies
+  anyway when it times out.
 - VoxyExtra-style mods alias several addresses onto one folder by mixing into
   `Path.resolve`; we get the same effect from symlink mode without touching
   Voxy internals, so no mixin for it.
@@ -185,12 +187,13 @@ caches) is shared across the group as if it were one server (full spec: the
   serving stale in-memory data over freshly pulled files (verified in production).
   SessionManager methods are synchronized because these hooks fire on different
   threads (render thread for ConnectScreen, netty for INIT).
-- **Push waits for quiescence, not just locks.** Xaero flushes world-map regions
-  *after* our disconnect handler runs and holds no file locks, so a probe-lock
-  check alone passes instantly and copies a half-written snapshot.
+- **Push waits for quiescence, but it is not a gate.** Xaero flushes world-map
+  regions *after* our disconnect handler runs and holds no file locks, so a
+  probe-lock check alone passes instantly and copies a half-written snapshot.
   `StorageCloseWaiter.awaitQuiescent(dir, timeout, stableMs)` polls a
-  path+size+mtime fingerprint until it stops changing. Tune via
-  `pushQuiescenceMs` in paths.json.
+  path+size+mtime fingerprint until it stops changing. The probe result, not
+  the quiescence result, decides whether the copy happens — a quiescence timeout
+  is logged and the push proceeds. Tune via `pushQuiescenceMs` in paths.json.
 - Disconnect/periodic pushes run on a background thread (never freeze the UI)
   and a shutdown hook joins the in-flight push for up to 5 s. Caveat: FastQuit
   can terminate the JVM abruptly — a hard quit right after disconnecting may
@@ -210,5 +213,9 @@ caches) is shared across the group as if it were one server (full spec: the
 - When sync silently does nothing, read the log top-down: `JOIN:` tells whether
   the server matched a group, `PULL`/`PUSH` lines tell whether paths resolved.
 - `paths.json` carries a `configVersion`; bump `PathsConfig.CONFIG_VERSION`
-  whenever built-in defaults change, otherwise existing installs keep stale
-  values (the old file is preserved as `paths.v<N>.bak`).
+  when built-in defaults change (the old file is preserved as
+  `paths.v<its version>.bak`, or `paths.v1.bak` for a file that predates the
+  key). A bump only reaches specs the file does not have yet and ids listed in
+  `PREVIOUSLY_ROOTLESS` — a spec already present keeps its paths, because
+  overwriting a hand-edited path or a cleared root is worse than a stale
+  default. Add an id there when a mod that shipped rootless gains roots.

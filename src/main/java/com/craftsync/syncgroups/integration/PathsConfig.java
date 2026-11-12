@@ -17,12 +17,14 @@ import java.util.Set;
 
 /**
  * User-editable defaults + overrides for the supported-mod table (spec §2).
- * Written to {@code .minecraft/syncgroups/paths.json} on first run so the user
+ * Written to {@code config/syncgroups/paths.json} on first run so the user
  * or a pack maintainer can fix paths for a new mod version without a code change.
  *
- * Bumping {@link #CONFIG_VERSION} regenerates the file (previous one is kept as
- * a .bak) so that corrected built-in paths — e.g. Xaero's move to probe-lock —
- * actually reach existing installs instead of being shadowed by stale values.
+ * Bumping {@link #CONFIG_VERSION} makes the file regenerate (the previous one is
+ * kept as a .bak) because Gson would otherwise keep whatever the old file had.
+ * A spec already in the file keeps its roots, so a bump only brings the built-in
+ * defaults to mods that are new — or, per {@link #PREVIOUSLY_ROOTLESS}, that a
+ * previous table shipped rootless. A cleared root is a user's opt-out.
  */
 public final class PathsConfig {
 
@@ -37,6 +39,8 @@ public final class PathsConfig {
      * Mods that shipped with empty {@code roots} in a previous built-in table —
      * Voxy used to be unsupported — so a stale file has to gain their roots.
      * Any other rootless spec is a user's deliberate opt-out and is left alone.
+     * Only files older than the version that introduced the roots are migrated;
+     * otherwise every future bump would resurrect an opt-out again.
      */
     private static final Set<String> PREVIOUSLY_ROOTLESS = Set.of("voxy");
 
@@ -89,35 +93,27 @@ public final class PathsConfig {
             }
         }
 
-        // Save the user's own values, not the v2 defaults, when their file is
-        // stale: they may have tuned periodicPushMinutes/quiescence by hand and
-        // losing that silently would be worse than the stale defaults we fix.
-        Integer keepPush = config == null ? null : config.periodicPushMinutes;
-        Integer keepTimeout = config == null ? null : config.storageCloseTimeoutSeconds;
-        Integer keepQuiescence = config == null ? null : config.pushQuiescenceMs;
-        Boolean keepTags = config == null ? null : config.showGroupTags;
-        String keepMode = config == null ? null : config.syncMode;
-        Map<String, ModSyncSpec> keepMods = config == null ? null : config.mods;
-
         if (config == null || stale) {
-            if (config != null) {
+            // Keep the parsed values (Gson leaves every field initialized) and
+            // only stamp the current version; a fresh instance would lose a
+            // field added without remembering to copy it here.
+            if (config == null) {
+                config = new PathsConfig();
+            }
+            config.configVersion = CONFIG_VERSION;
+            if (Files.exists(file)) {
                 Path backup = file.resolveSibling("paths.v" + fileVersion + ".bak");
                 try {
                     Files.move(file, backup, StandardCopyOption.REPLACE_EXISTING);
                     Diag.warn("CONFIG: paths.json was v%d, current is v%d — regenerated "
-                                    + "(previous file kept at %s). Re-apply any manual path edits.",
+                                    + "(previous file kept at %s). Paths already in the file were kept.",
                             fileVersion, CONFIG_VERSION, backup.getFileName());
                 } catch (IOException e) {
-                    Diag.error("CONFIG: could not back up old paths.json", e);
+                    // Never overwrite a file we could not preserve.
+                    Diag.error("CONFIG: could not back up " + file + " — leaving it untouched", e);
+                    return config;
                 }
             }
-            config = new PathsConfig();
-            if (keepPush != null) config.periodicPushMinutes = keepPush;
-            if (keepTimeout != null) config.storageCloseTimeoutSeconds = keepTimeout;
-            if (keepQuiescence != null) config.pushQuiescenceMs = keepQuiescence;
-            if (keepTags != null) config.showGroupTags = keepTags;
-            if (keepMode != null) config.syncMode = keepMode;
-            if (keepMods != null) config.mods = keepMods;
         }
 
         // Fill in any spec missing from the file (new mod added to the mod). On a
@@ -129,14 +125,19 @@ public final class PathsConfig {
         if (config.mods == null) {
             config.mods = new LinkedHashMap<>();
         }
-        boolean migrateRoots = stale;
+        // A hand-edited "roots": null would otherwise NPE on startup and on
+        // every join, including for specs this table does not know.
+        config.mods.values().forEach(spec -> {
+            if (spec.roots == null) {
+                spec.roots = new ArrayList<>();
+            }
+        });
+        // Voxy's roots first shipped in v3; only older files migrate.
+        boolean migrateRoots = stale && fileVersion < 3;
         PathsConfig effective = config;
         ModSpecs.defaults().forEach(spec -> effective.mods.compute(spec.modId, (id, existing) -> {
             if (existing == null) {
                 return spec;
-            }
-            if (existing.roots == null) {
-                existing.roots = new ArrayList<>();
             }
             if (migrateRoots && PREVIOUSLY_ROOTLESS.contains(id) && existing.roots.isEmpty()) {
                 return spec;
