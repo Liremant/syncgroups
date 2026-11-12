@@ -110,7 +110,9 @@ public class ModSyncSpec {
                     continue;
                 }
                 String value = vars.get(ph);
-                if (value == null || value.isBlank()) {
+                // All-dot values are path noise, not names: "." and ".." would
+                // resolve back to the root itself or its parent.
+                if (value == null || value.isBlank() || value.matches("\\.+")) {
                     return null;
                 }
                 s = s.replace("{" + ph + "}", value);

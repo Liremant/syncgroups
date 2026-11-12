@@ -112,13 +112,27 @@ public final class SessionManager {
             engine.pullForJoin(group, key, serverName);
         } catch (Exception e) {
             Diag.error("JOIN: pull FAILED for key='" + key + "' group=" + group.id, e);
-            synchronized (this) {
-                pullingFor = null;
-            }
             return false;
+        } catch (Error e) {
+            // An OOM in the middle of a big pull must not leave the key locked out
+            // for the rest of the run: ConnectScreenMixin swallows Throwable.
+            Diag.error("JOIN: pull aborted for key='" + key + "'", e);
+            throw e;
+        } finally {
+            synchronized (this) {
+                if (key.equals(pullingFor)) {
+                    pullingFor = null;
+                }
+            }
         }
         synchronized (this) {
-            pullingFor = null;
+            if (pullingFor != null && !key.equals(pullingFor)) {
+                // Another join superseded this one while the pull was running (the
+                // player cancelled and connected somewhere else). Committing here
+                // would leave the session pointing at the server they left.
+                Diag.warn("JOIN: pull for key='%s' was superseded by '%s' — not applying it", key, pullingFor);
+                return false;
+            }
             currentGroup = group;
             currentServerKey = key;
             currentServerName = serverName;

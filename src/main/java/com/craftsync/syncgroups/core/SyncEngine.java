@@ -295,8 +295,14 @@ public final class SyncEngine {
                 // effect for this server. Detaching is safe when the link is ours — its
                 // target is the group folder, so even an empty one loses nothing.
                 Path local = root.resolvePrimary(gameDir, v);
-                if (DirOps.isSymlink(local)
-                        && (DirOps.linksTo(local, sync) || DirOps.existsAndNonEmpty(sync))) {
+                if (DirOps.isSymlink(local)) {
+                    if (!DirOps.linksTo(local, sync)) {
+                        // A link somebody else made (mod, user, another tool): removing
+                        // it would drop the only pointer to that data. convertOne refuses
+                        // the same case — do the same here instead of half-converting.
+                        Diag.warn("PULL %s: %s is a symlink to another location — left untouched", tag, local);
+                        continue;
+                    }
                     Diag.warn("PULL %s: %s is a leftover symlink while mode=copy — detaching", tag, local);
                     DirOps.deleteTree(local); // link only, never the target
                 }

@@ -36,10 +36,10 @@ caches) is shared across the group as if it were one server (full spec: the
   on-disk work; the conversion runs on a background thread because materialising a
   group back into copies can mean hundreds of MB (Bobby regions, DH databases) and
   must not stall the loading screen. It is serialised with the join pull via
-  `SyncEngine.fsLock`: one monitor, but the conversion takes it per (server,
-  root) and releases it between units, so a join waits for at most one server's
-  copy rather than for the whole conversion. Dirty-marker recovery takes the
-  same monitor. While a session is open the mode is only saved —
+  `SyncEngine.fsLock`: one monitor. The conversion takes it per (server, root)
+  and releases it between units, so a join waits for at most one server's copy
+  rather than for the whole conversion; the join pull itself holds it for its own
+  duration. Dirty-marker recovery and each push's copy take the same monitor. While a session is open the mode is only saved —
   the conversion waits for the next launch, because the mods have their storage in
   use. Before converting, pending dirty markers are published
   (`recoverDirtyMarkers`) so a crashed copy-mode session's newest data is not
