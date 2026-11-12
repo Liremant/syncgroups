@@ -20,11 +20,11 @@ import java.util.Set;
  * Written to {@code config/syncgroups/paths.json} on first run so the user
  * or a pack maintainer can fix paths for a new mod version without a code change.
  *
- * Bumping {@link #CONFIG_VERSION} makes the file regenerate (the previous one is
- * kept as a .bak) because Gson would otherwise keep whatever the old file had.
- * A spec already in the file keeps its roots, so a bump only brings the built-in
- * defaults to mods that are new — or, per {@link #PREVIOUSLY_ROOTLESS}, that a
- * previous table shipped rootless. A cleared root is a user's opt-out.
+ * Bumping {@link #CONFIG_VERSION} makes the file rewrite and keep the previous
+ * one as a .bak. Every setting and every spec already in the file is kept, so a
+ * bump only brings the built-in defaults to mods that are new — or, per
+ * {@link #PREVIOUSLY_ROOTLESS}, that a previous table shipped rootless. A
+ * cleared root is a user's opt-out.
  */
 public final class PathsConfig {
 
@@ -81,40 +81,26 @@ public final class PathsConfig {
                 if (parsed != null) {
                     config = parsed;
                     // Staleness must be read from the raw JSON: Gson leaves the
-                    // field initializer in place for a missing key, so an old
-                    // file would report the current version and never migrate.
-                    if (raw.has("configVersion")) {
+                    // field initializer (and throws a null away) for a missing
+                    // or null key, so the parsed value would claim the current
+                    // version and never migrate.
+                    if (raw.has("configVersion") && !raw.get("configVersion").isJsonNull()) {
                         fileVersion = parsed.configVersion;
                     }
                     stale = fileVersion != CONFIG_VERSION;
                 }
             } catch (Exception e) {
-                Diag.error("CONFIG: failed to parse " + file + " — regenerating from built-in defaults", e);
+                Diag.error("CONFIG: failed to parse " + file + " — using built-in defaults", e);
             }
         }
 
-        if (config == null || stale) {
-            // Keep the parsed values (Gson leaves every field initialized) and
-            // only stamp the current version; a fresh instance would lose a
-            // field added without remembering to copy it here.
-            if (config == null) {
-                config = new PathsConfig();
-            }
-            config.configVersion = CONFIG_VERSION;
-            if (Files.exists(file)) {
-                Path backup = file.resolveSibling("paths.v" + fileVersion + ".bak");
-                try {
-                    Files.move(file, backup, StandardCopyOption.REPLACE_EXISTING);
-                    Diag.warn("CONFIG: paths.json was v%d, current is v%d — regenerated "
-                                    + "(previous file kept at %s). Paths already in the file were kept.",
-                            fileVersion, CONFIG_VERSION, backup.getFileName());
-                } catch (IOException e) {
-                    // Never overwrite a file we could not preserve.
-                    Diag.error("CONFIG: could not back up " + file + " — leaving it untouched", e);
-                    return config;
-                }
-            }
+        // Gson leaves every field initialized, so the parsed instance already
+        // holds the user's values; only the version is stamped.
+        boolean rewrite = stale || config == null;
+        if (config == null) {
+            config = new PathsConfig();
         }
+        config.configVersion = CONFIG_VERSION;
 
         // Fill in any spec missing from the file (new mod added to the mod). On a
         // file from an older default table, a spec this table shipped rootless
@@ -145,18 +131,46 @@ public final class PathsConfig {
             return existing;
         }));
 
+        // Done before the backup, so a failed backup still hands the caller a
+        // normalised config — it would otherwise be saved un-migrated later.
+        if (rewrite && Files.exists(file)) {
+            Path backup = freeBackupName(file.resolveSibling("paths.v" + fileVersion + ".bak"));
+            try {
+                Files.move(file, backup, StandardCopyOption.REPLACE_EXISTING);
+                Diag.warn("CONFIG: paths.json was v%d, current is v%d — backing it up to %s and rewriting",
+                        fileVersion, CONFIG_VERSION, backup.getFileName());
+            } catch (IOException e) {
+                // Never overwrite a file we could not preserve.
+                Diag.error("CONFIG: could not back up " + file + " — leaving it untouched", e);
+                return config;
+            }
+        }
+
         try {
-            Files.createDirectories(file.getParent());
-            Files.writeString(file, GSON.toJson(config));
+            save(file, config);
         } catch (IOException e) {
             Diag.error("CONFIG: failed to write " + file, e);
         }
         return config;
     }
 
-    /** Writes the given config back to disk (settings screen edits). */
+    /** Never clobbers an existing backup: an unparseable file cannot tell its version. */
+    private static Path freeBackupName(Path backup) {
+        Path candidate = backup;
+        for (int i = 2; Files.exists(candidate); i++) {
+            candidate = backup.resolveSibling(backup.getFileName() + "." + i);
+        }
+        return candidate;
+    }
+
+    /**
+     * Writes the given config back to disk (settings screen edits). Goes through
+     * a temp file so a full disk cannot truncate a working config.
+     */
     public static void save(Path file, PathsConfig config) throws IOException {
         Files.createDirectories(file.getParent());
-        Files.writeString(file, GSON.toJson(config));
+        Path tmp = file.resolveSibling(file.getFileName() + ".tmp");
+        Files.writeString(tmp, GSON.toJson(config));
+        Files.move(tmp, file, StandardCopyOption.REPLACE_EXISTING);
     }
 }

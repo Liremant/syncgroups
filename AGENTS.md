@@ -136,7 +136,7 @@ caches) is shared across the group as if it were one server (full spec: the
 ## Domain facts (verified Sept 2026 against mod sources/bytecode)
 
 - Supported-mod paths live in `ModSpecs` defaults and are user-overridable in
-  `config/syncgroups/paths.json` inside the game dir (regenerated on first
+  `config/syncgroups/paths.json` inside the game dir (written on first
   run). Do not hardcode paths elsewhere.
 - Xaero (≥ Minimap 25.3 / World Map 1.39): `xaero/minimap`,
   `xaero/world-map`, key `Multiplayer_<host-without-port>`. Legacy roots

@@ -73,7 +73,7 @@ genuinely shared.
 Every path above can be overridden in `paths.json` (see below) if a mod update
 moves something.
 
-`paths.json` carries a `configVersion`, and a bump makes the mod regenerate the
+`paths.json` carries a `configVersion`, and a bump makes the mod rewrite the
 file: the old one is moved to `paths.v<the old file's version>.bak` (a file that
 predates the key counts as v1) and written back with every setting and path you
 had, so hand edits survive. What a bump adds is the built-in defaults for mods
