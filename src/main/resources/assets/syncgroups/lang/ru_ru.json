@@ -39,5 +39,8 @@
   "syncgroups.pick.selected": "выбрано: %d",
   "syncgroups.create.sameServers": "Эти серверы с одним адресом — выберите два разных",
   "syncgroups.manage.removeFailed": "Не удалось убрать сервер: %s",
-  "syncgroups.pick.needTwo": "Сначала добавьте в список минимум 2 сервера"
+  "syncgroups.pick.needTwo": "Сначала добавьте в список минимум 2 сервера",
+  "syncgroups.manage.confirm.title": "Распустить группу?",
+  "syncgroups.manage.confirm.message": "После удаления %2$s в группе «%1$s» останется один сервер, поэтому группа распускается. Каждому серверу будет сделана своя копия общих данных — с большими картами это может занять время.",
+  "syncgroups.manage.busy": "Копирую общие данные из группы — не закрывайте игру"
 }

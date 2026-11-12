@@ -39,5 +39,8 @@
   "syncgroups.pick.selected": "%d selected",
   "syncgroups.create.sameServers": "Those servers share one address — pick two that differ",
   "syncgroups.manage.removeFailed": "Could not remove the server: %s",
-  "syncgroups.pick.needTwo": "Save at least 2 servers in the multiplayer list first"
+  "syncgroups.pick.needTwo": "Save at least 2 servers in the multiplayer list first",
+  "syncgroups.manage.confirm.title": "Dissolve the group?",
+  "syncgroups.manage.confirm.message": "Removing %2$s leaves '%1$s' with one server, so the group is dissolved. Every remaining server gets its own copy of the shared data — that can take a while with large map caches.",
+  "syncgroups.manage.busy": "Copying the shared data out of the group — do not quit the game"
 }

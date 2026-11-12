@@ -34,6 +34,8 @@ public final class Diag {
 
     private static Path file;
     private static boolean broken;
+    /** Rotation is attempted once per run: a failing disk must not retry on every line. */
+    private static boolean rotated;
 
     private Diag() {
     }
@@ -116,10 +118,29 @@ public final class Diag {
         // ponytail: one lock for all diagnostics, split per level if contention
         // ever shows up in a profile.
         try {
+            if (!rotated) {
+                rotateIfTooBig();
+            }
             Files.writeString(file, text, StandardCharsets.UTF_8,
                     StandardOpenOption.CREATE, StandardOpenOption.APPEND);
         } catch (IOException | RuntimeException e) {
             broken = true; // log once, then stay quiet
+        }
+    }
+
+    /**
+     * A long session on a big map can pass the size limit between launches; the
+     * file is what testers send us, so it should not grow without bound.
+     */
+    private static void rotateIfTooBig() {
+        try {
+            if (Files.size(file) > MAX_BYTES) {
+                Files.move(file, file.resolveSibling("diagnostics.prev.log"),
+                        java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                rotated = true;
+            }
+        } catch (IOException | RuntimeException e) {
+            rotated = true; // one attempt, then keep logging into the current file
         }
     }
 

@@ -801,10 +801,14 @@ public final class SyncEngine {
         working.servers.remove(serverKey);
         boolean dissolved = working.servers.size() <= 1;
         if (dissolved) {
-            // Everyone still pointing into the group folder (the removed server
-            // included) needs a real directory before that folder moves away.
-            materializeLinks(working, all);
-            dissolve(working, store);
+            // Copying the shared folder out can take minutes, and a concurrent join
+            // pull or push touches the same paths — same lock as they use.
+            synchronized (fsLock) {
+                // Everyone still pointing into the group folder (the removed server
+                // included) needs a real directory before that folder moves away.
+                materializeLinks(working, all);
+                dissolve(working, store);
+            }
         } else {
             store.update(working);
         }
@@ -890,9 +894,15 @@ public final class SyncEngine {
         }
     }
 
-    /** Moves the children of {@code from} into {@code to}, leaving {@code from} empty. */
+    /**
+     * Moves the children of {@code from} into {@code to}, leaving {@code from} empty.
+     * On a failure the moves already done are undone: a profile split between the
+     * local folder and the group copy looks intact to the mod but holds half of
+     * each world, and no later step knows it should finish the job.
+     */
     private void moveContentIn(Path from, Path to) throws IOException {
         Files.createDirectories(to);
+        List<Path[]> moved = new ArrayList<>();
         try (Stream<Path> s = Files.list(from)) {
             for (Path child : (Iterable<Path>) s::iterator) {
                 Path target = to.resolve(child.getFileName().toString());
@@ -900,7 +910,17 @@ public final class SyncEngine {
                     DirOps.deleteTree(target);
                 }
                 DirOps.moveTree(child, target);
+                moved.add(new Path[]{target, child});
             }
+        } catch (IOException | RuntimeException e) {
+            for (int i = moved.size() - 1; i >= 0; i--) {
+                try {
+                    DirOps.moveTree(moved.get(i)[0], moved.get(i)[1]);
+                } catch (IOException rollback) {
+                    Diag.error("MOVE: could not return " + moved.get(i)[0] + " to " + moved.get(i)[1], rollback);
+                }
+            }
+            throw e;
         }
     }
 
