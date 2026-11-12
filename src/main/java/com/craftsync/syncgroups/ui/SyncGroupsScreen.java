@@ -119,8 +119,10 @@ public class SyncGroupsScreen extends Screen {
                 if (dissolved) {
                     SyncGroupsMod.LOGGER.info("Group '{}' dissolved", row.group().tag);
                 }
-            } catch (IOException e) {
-                // Say it: otherwise the server reappears after a restart with no hint.
+            } catch (IOException | RuntimeException e) {
+                // RuntimeException too: DirOps throws DirOps.UncheckedIOException out of a
+                // delete walk, and letting that escape would leave the screen stuck on
+                // "busy" with nothing in the log.
                 SyncGroupsMod.LOGGER.error("Failed to remove server from group", e);
                 failure = String.valueOf(e.getMessage());
             }

@@ -137,7 +137,6 @@ public final class Diag {
             if (Files.size(file) > MAX_BYTES) {
                 Files.move(file, file.resolveSibling("diagnostics.prev.log"),
                         java.nio.file.StandardCopyOption.REPLACE_EXISTING);
-                rotated = true;
             }
         } catch (IOException | RuntimeException e) {
             rotated = true; // one attempt, then keep logging into the current file

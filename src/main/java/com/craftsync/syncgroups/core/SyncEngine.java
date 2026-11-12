@@ -281,6 +281,14 @@ public final class SyncEngine {
                             existing = List.of();
                             local = root.resolvePrimary(gameDir, v);
                         }
+                    } else if (DirOps.isSymlink(local)) {
+                        if (!DirOps.linksTo(local, sync)) {
+                            // Somebody else's link: removing it would drop the only pointer
+                            // to that data. convertOne refuses the same case.
+                            Diag.warn("PULL %s: %s is a symlink to another location — left untouched", tag, local);
+                            continue;
+                        }
+                        DirOps.deleteTree(local); // our own leftover link, link only
                     } else if (Files.exists(local, LinkOption.NOFOLLOW_LINKS)) {
                         DirOps.deleteTree(local);
                     }
@@ -903,8 +911,12 @@ public final class SyncEngine {
     private void moveContentIn(Path from, Path to) throws IOException {
         Files.createDirectories(to);
         List<Path[]> moved = new ArrayList<>();
+        List<Path> children;
         try (Stream<Path> s = Files.list(from)) {
-            for (Path child : (Iterable<Path>) s::iterator) {
+            children = s.toList(); // snapshot: the loop below removes entries from `from`
+        }
+        try {
+            for (Path child : children) {
                 Path target = to.resolve(child.getFileName().toString());
                 if (Files.exists(target, LinkOption.NOFOLLOW_LINKS)) {
                     DirOps.deleteTree(target);
