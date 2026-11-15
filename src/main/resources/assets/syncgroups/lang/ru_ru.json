@@ -53,5 +53,6 @@
   "syncgroups.toast.title": "Sync Groups",
   "syncgroups.toast.renamed": "Группа переименована в «%s»",
   "syncgroups.toast.recolored": "Цвет «%s» сохранён",
-  "syncgroups.toast.created": "Группа «%s» создана"
+  "syncgroups.toast.created": "Группа «%s» создана",
+  "syncgroups.manage.selectFirst": "Кликните на строку сервера, затем кнопки внизу"
 }

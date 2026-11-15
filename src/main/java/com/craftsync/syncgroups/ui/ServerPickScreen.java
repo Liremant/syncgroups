@@ -51,7 +51,9 @@ public class ServerPickScreen extends Screen {
         if (list != null) {
             list.closeIcons();
         }
-        layout = new HeaderAndFooterLayout(this);
+        // Two stacked buttons need 44px; the default 33px footer would push the
+        // bottom one past the screen edge and let the list eat its clicks.
+        layout = new HeaderAndFooterLayout(this, 36, 56);
         layout.addTitleHeader(title, font);
 
         list = new ServerPickList(minecraft, this, layout.getContentHeight());
@@ -103,7 +105,7 @@ public class ServerPickScreen extends Screen {
                 : servers.size() < 2
                         ? Component.translatable("syncgroups.pick.needTwo")
                         : Component.translatable("syncgroups.pick.selected", selected.size());
-        g.centeredText(font, line, width / 2, height - layout.getFooterHeight() - 10,
+        g.centeredText(font, line, width / 2, height - layout.getFooterHeight() - 12,
                 hint != null ? 0xFF5555 : 0x909090);
     }
 

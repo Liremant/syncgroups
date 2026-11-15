@@ -240,12 +240,15 @@ public class SyncGroupsScreen extends Screen {
         }
         if (rows.isEmpty()) {
             g.centeredText(font, Component.translatable("syncgroups.manage.empty"), width / 2, 60, 0x909090);
+        } else if (selectedGroupId == null && !busy) {
+            g.centeredText(font, Component.translatable("syncgroups.manage.selectFirst"),
+                    width / 2, 30, 0x909090);
         }
         if (busy) {
             g.centeredText(font, Component.translatable("syncgroups.manage.busy"),
-                    width / 2, height - 72, 0xE0C060);
+                    width / 2, height - 86, 0xE0C060);
         } else if (error != null) {
-            g.centeredText(font, error, width / 2, height - 72, 0xFF5555);
+            g.centeredText(font, error, width / 2, height - 86, 0xFF5555);
         }
     }
 

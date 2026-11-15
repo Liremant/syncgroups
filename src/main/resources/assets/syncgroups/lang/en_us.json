@@ -53,5 +53,6 @@
   "syncgroups.toast.title": "Sync Groups",
   "syncgroups.toast.renamed": "Group renamed to '%s'",
   "syncgroups.toast.recolored": "Colour of '%s' saved",
-  "syncgroups.toast.created": "Group '%s' created"
+  "syncgroups.toast.created": "Group '%s' created",
+  "syncgroups.manage.selectFirst": "Click a server row, then use the buttons below"
 }
