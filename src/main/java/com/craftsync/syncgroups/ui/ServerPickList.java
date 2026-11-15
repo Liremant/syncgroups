@@ -44,7 +44,12 @@ public class ServerPickList extends ObjectSelectionList<ServerPickList.Entry> {
     public boolean mouseClicked(net.minecraft.client.input.MouseButtonEvent event, boolean doubled) {
         boolean handled = super.mouseClicked(event, doubled);
         Entry hit = getEntryAtPosition(event.x(), event.y());
-        if (hit != null && event.button() == 0) {
+        // Row-rect guard: getEntryAtPosition is vanilla y-bounded only; keep the
+        // toggle inside the visible row so scrollbar-gutter clicks never toggle.
+        int rowLeft = getRowLeft();
+        boolean inRow = hit != null && event.x() >= rowLeft
+                && event.x() <= rowLeft + getRowWidth();
+        if (inRow && event.button() == 0) {
             // Toggle here, not in Entry.mouseClicked: the container dispatch to row
             // entries proved unreliable, while clicks at this level always arrive.
             Diag.info("PICK: %s -> %s", hit.data.ip, screen.selected.contains(hit.data.ip) ? "off" : "on");

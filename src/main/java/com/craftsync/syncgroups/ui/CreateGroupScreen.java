@@ -64,7 +64,9 @@ public class CreateGroupScreen extends Screen {
         int x0 = Math.max(8, (width - total) / 2);
         picker = new ColorPicker(x0, 50, PICKER_W, PICKER_H, initialColor);
 
-        int rx = x0 + ColorPicker.layoutWidth(PICKER_W) + COLUMN_GAP;
+        // On narrow windows (min 427px) the fixed 470px block overflows right:
+        // clamp the right column so the tag box and buttons stay on screen.
+        int rx = Math.min(x0 + ColorPicker.layoutWidth(PICKER_W) + COLUMN_GAP, width - COLUMN_W - 4);
 
         tagBox = new EditBox(font, rx, 70, COLUMN_W, 20, Component.translatable("syncgroups.create.tag"));
         tagBox.setMaxLength(16);
