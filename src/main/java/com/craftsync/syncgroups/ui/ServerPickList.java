@@ -42,7 +42,7 @@ public class ServerPickList extends ObjectSelectionList<ServerPickList.Entry> {
 
     @Override
     public boolean mouseClicked(net.minecraft.client.input.MouseButtonEvent event, boolean doubled) {
-        Diag.info("PICK-LIST: click at %f,%f (list %d..%d x %d..%d)", event.x(), event.y(),
+        Diag.info("PICK-LIST: click at %f,%f btn=%d (list %d..%d x %d..%d)", event.x(), event.y(), event.button(),
                 getX(), getX() + getWidth(), getY(), getY() + getHeight());
         boolean handled = super.mouseClicked(event, doubled);
         Entry hit = getEntryAtPosition(event.x(), event.y());
@@ -50,9 +50,9 @@ public class ServerPickList extends ObjectSelectionList<ServerPickList.Entry> {
             Diag.info("PICK-LIST: hit row %s rect %d..%d x %d..%d", hit.data.ip,
                     hit.getX(), hit.getX() + hit.getWidth(), hit.getY(), hit.getY() + hit.getHeight());
         }
-        if (hit != null && event.button() == 0) {
-            // Toggle here, not in Entry.mouseClicked: the container dispatch to row
-            // entries proved unreliable, while clicks at this level always arrive.
+        // 26.3 input layer numbers the left mouse button as 1 (verified: vanilla
+        // AbstractWidget.isValidClickButton accepts exactly button() == 1).
+        if (hit != null && event.button() == 1) {
             Diag.info("PICK: %s -> %s", hit.data.ip, screen.selected.contains(hit.data.ip) ? "off" : "on");
             if (screen.selected.contains(hit.data.ip)) {
                 screen.selected.remove(hit.data.ip);
