@@ -1,5 +1,7 @@
 # Sync Groups
 
+![icon](.github/assets/icon.png)
+
 A client-side Fabric mod for Minecraft 26.3. It lets you put several servers
 into a group so that per-server client data — minimap waypoints, world-map
 regions, Bobby's chunk cache, Distant Horizons LODs — is shared between them
