@@ -4,6 +4,7 @@ import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.multiplayer.ServerData;
+import com.craftsync.syncgroups.core.Diag;
 import net.minecraft.client.multiplayer.ServerList;
 import net.minecraft.network.chat.Component;
 
@@ -65,6 +66,7 @@ public class ServerPickScreen extends Screen {
         addRenderableWidget(list);
         repositionElements();
         setInitialFocus(list);
+        Diag.info("PICK-SCREEN: list at %dx%d, y=%d", width, height - HEADER - FOOTER, HEADER);
     }
 
     @Override

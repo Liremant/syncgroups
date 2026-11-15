@@ -33,7 +33,20 @@ public class ServerPickList extends ObjectSelectionList<ServerPickList.Entry> {
     private static final int ICON = 32;
     private static final int TEXT_X = BOX + 4 + ICON + 3;
 
+    // Same sprites vanilla Checkbox draws — widget/checkbox[_selected][_highlighted].
+    private static final net.minecraft.resources.Identifier SPRITE_SELECTED =
+            net.minecraft.resources.Identifier.withDefaultNamespace("widget/checkbox_selected");
+    private static final net.minecraft.resources.Identifier SPRITE_UNSELECTED =
+            net.minecraft.resources.Identifier.withDefaultNamespace("widget/checkbox");
+
     private final ServerPickScreen screen;
+
+    @Override
+    public boolean mouseClicked(net.minecraft.client.input.MouseButtonEvent event, boolean doubled) {
+        Diag.info("PICK-LIST: click at %f,%f -> %s", event.x(), event.y(),
+                getEntryAtPosition(event.x(), event.y()) != null ? "entry" : "no entry");
+        return super.mouseClicked(event, doubled);
+    }
 
     public ServerPickList(Minecraft minecraft, ServerPickScreen screen, int height) {
         super(minecraft, screen.width, height, 0, ROW_HEIGHT);
@@ -41,6 +54,7 @@ public class ServerPickList extends ObjectSelectionList<ServerPickList.Entry> {
         for (int i = 0; i < screen.servers.size(); i++) {
             addEntry(new Entry(screen.servers.get(i)));
         }
+        Diag.info("PICK-LIST: %d server rows", screen.servers.size());
     }
 
     @Override
@@ -119,21 +133,12 @@ public class ServerPickList extends ObjectSelectionList<ServerPickList.Entry> {
         }
 
         private void drawCheckbox(GuiGraphicsExtractor g, int x, int y) {
-            int bx = x;
+            int bx = x + 2;
             int by = y + (ROW_HEIGHT - BOX) / 2;
-            g.fill(bx, by, bx + BOX, by + BOX, 0xFF101010);
-            g.fill(bx, by, bx + BOX, by + 1, 0xFF6C6C6C);
-            g.fill(bx, by + BOX - 1, bx + BOX, by + BOX, 0xFF6C6C6C);
-            g.fill(bx, by, bx + 1, by + BOX, 0xFF6C6C6C);
-            g.fill(bx + BOX - 1, by, bx + BOX, by + BOX, 0xFF6C6C6C);
-            if (screen.selected.contains(data.ip)) {
-                for (int i = 0; i < 4; i++) {
-                    g.fill(bx + 3 + i, by + 8 + i, bx + 4 + i, by + 9 + i, 0xFF00C853);
-                }
-                for (int i = 0; i < 6; i++) {
-                    g.fill(bx + 6 + i, by + 11 - i, bx + 7 + i, by + 12 - i, 0xFF00C853);
-                }
-            }
+            net.minecraft.resources.Identifier sprite = screen.selected.contains(data.ip)
+                    ? SPRITE_SELECTED : SPRITE_UNSELECTED;
+            g.blit(net.minecraft.client.renderer.RenderPipelines.GUI_TEXTURED, sprite,
+                    bx, by, 0f, 0f, BOX, BOX, BOX, BOX);
         }
 
         private void uploadIcon() {
