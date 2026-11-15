@@ -8,7 +8,6 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.ObjectSelectionList;
 import net.minecraft.client.gui.screens.FaviconTexture;
-import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.client.multiplayer.ServerData;
 import net.minecraft.client.renderer.RenderPipelines;
 import net.minecraft.network.chat.Component;
@@ -43,9 +42,21 @@ public class ServerPickList extends ObjectSelectionList<ServerPickList.Entry> {
 
     @Override
     public boolean mouseClicked(net.minecraft.client.input.MouseButtonEvent event, boolean doubled) {
-        Diag.info("PICK-LIST: click at %f,%f -> %s", event.x(), event.y(),
-                getEntryAtPosition(event.x(), event.y()) != null ? "entry" : "no entry");
-        return super.mouseClicked(event, doubled);
+        boolean handled = super.mouseClicked(event, doubled);
+        Entry hit = getEntryAtPosition(event.x(), event.y());
+        if (hit != null && event.button() == 0) {
+            // Toggle here, not in Entry.mouseClicked: the container dispatch to row
+            // entries proved unreliable, while clicks at this level always arrive.
+            Diag.info("PICK: %s -> %s", hit.data.ip, screen.selected.contains(hit.data.ip) ? "off" : "on");
+            if (screen.selected.contains(hit.data.ip)) {
+                screen.selected.remove(hit.data.ip);
+            } else {
+                screen.selected.add(hit.data.ip);
+            }
+            screen.hint = null;
+            handled = true;
+        }
+        return handled;
     }
 
     public ServerPickList(Minecraft minecraft, ServerPickScreen screen, int height) {
@@ -112,22 +123,6 @@ public class ServerPickList extends ObjectSelectionList<ServerPickList.Entry> {
         }
 
         @Override
-        public boolean mouseClicked(MouseButtonEvent event, boolean doubled) {
-            if (event.button() != 0) {
-                return false;
-            }
-            boolean on = screen.selected.contains(data.ip);
-            Diag.info("PICK: %s -> %s", data.ip, !on ? "on" : "off");
-            if (on) {
-                screen.selected.remove(data.ip);
-            } else {
-                screen.selected.add(data.ip);
-            }
-            screen.hint = null;
-            return true;
-        }
-
-        @Override
         public Component getNarration() {
             return Component.translatable("narrator.select.list.position", getItemCount());
         }
@@ -137,8 +132,8 @@ public class ServerPickList extends ObjectSelectionList<ServerPickList.Entry> {
             int by = y + (ROW_HEIGHT - BOX) / 2;
             net.minecraft.resources.Identifier sprite = screen.selected.contains(data.ip)
                     ? SPRITE_SELECTED : SPRITE_UNSELECTED;
-            g.blit(net.minecraft.client.renderer.RenderPipelines.GUI_TEXTURED, sprite,
-                    bx, by, 0f, 0f, BOX, BOX, BOX, BOX);
+            g.blitSprite(net.minecraft.client.renderer.RenderPipelines.GUI_TEXTURED, sprite,
+                    bx, by, BOX, BOX);
         }
 
         private void uploadIcon() {
