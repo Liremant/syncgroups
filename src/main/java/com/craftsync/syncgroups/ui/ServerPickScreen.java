@@ -43,8 +43,31 @@ public class ServerPickScreen extends Screen {
         this.servers.load();
     }
 
+    /**
+     * A group is only as good as its weakest member: data syncs to a server the
+     * client cannot reach exactly never, and an offline entry in the group would
+     * make every pull/push for it fail forever. So only reachable servers are
+     * offered; the ping happens when the multiplayer screen opens, and entries
+     * still pinging (INITIAL/PINGING) are shown but not selectable.
+     */
+    private static boolean canGroup(ServerData data) {
+        var state = data.state();
+        return state == net.minecraft.client.multiplayer.ServerData.State.SUCCESSFUL
+                || state == net.minecraft.client.multiplayer.ServerData.State.INCOMPATIBLE;
+    }
+
     @Override
     protected void init() {
+        // A server that went offline between visits must not ride along silently.
+        selected.removeIf(address -> {
+            for (int i = 0; i < servers.size(); i++) {
+                ServerData d = servers.get(i);
+                if (d.ip.equals(address)) {
+                    return !canGroup(d);
+                }
+            }
+            return true; // entry gone from the saved list
+        });
         // The list can shrink between visits; keep the window inside it.
         scroll = Math.max(0, Math.min(scroll, Math.max(0, servers.size() - VISIBLE_ROWS)));
         int listWidth = Math.min(300, width - 40);
@@ -52,10 +75,11 @@ public class ServerPickScreen extends Screen {
         int y0 = 40;
         for (int i = scroll; i < servers.size() && i < scroll + VISIBLE_ROWS; i++) {
             ServerData data = servers.get(i);
+            boolean groupable = canGroup(data);
             String address = data.ip;
             Checkbox box = Checkbox.builder(serverLabel(data), font)
                     .pos(x0, y0 + (i - scroll) * ROW_HEIGHT)
-                    .selected(selected.contains(address))
+                    .selected(groupable && selected.contains(address))
                     .onValueChange((cb, checked) -> {
                         if (checked) {
                             selected.add(address);
@@ -65,6 +89,11 @@ public class ServerPickScreen extends Screen {
                         refreshNext();
                     })
                     .build();
+            box.active = groupable;
+            if (!groupable) {
+                box.setTooltip(net.minecraft.client.gui.components.Tooltip.create(
+                        Component.translatable("syncgroups.pick.offline")));
+            }
             addRenderableWidget(box);
         }
         next = Button.builder(Component.translatable("syncgroups.pick.next"), b -> onNext())
@@ -93,7 +122,7 @@ public class ServerPickScreen extends Screen {
         List<ServerData> picked = new ArrayList<>();
         for (int i = 0; i < servers.size() && picked.size() < selected.size(); i++) {
             ServerData data = servers.get(i);
-            if (selected.contains(data.ip)) {
+            if (selected.contains(data.ip) && canGroup(data)) {
                 picked.add(data);
             }
         }
