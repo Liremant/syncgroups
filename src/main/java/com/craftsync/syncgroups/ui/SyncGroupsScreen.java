@@ -234,9 +234,9 @@ public class SyncGroupsScreen extends Screen {
             int color = row.group().colorInt();
             g.fill(x0, y + 3, x0 + 8, y + 15, 0xFF000000 | color);
             g.fill(x0, y + 3, x0 + 8, y + 4, 0x66FFFFFF);
-            g.text(font, clip(font, row.group().tag, 70 - 16), x0 + 12, y + 5, color);
+            g.text(font, clip(font, row.group().tag, 70 - 16), x0 + 12, y + 5, 0xFF000000 | color);
             int keyWidth = x0 + 300 - 100 - (x0 + 70);
-            g.text(font, clip(font, row.serverKey(), keyWidth), x0 + 70, y + 5, 0xB0B0B0);
+            g.text(font, clip(font, row.serverKey(), keyWidth), x0 + 70, y + 5, 0xFFB0B0B0);
         }
         if (rows.isEmpty()) {
             g.centeredText(font, Component.translatable("syncgroups.manage.empty"), width / 2, 60, 0x909090);

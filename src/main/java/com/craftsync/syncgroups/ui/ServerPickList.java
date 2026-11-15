@@ -87,14 +87,14 @@ public class ServerPickList extends ObjectSelectionList<ServerPickList.Entry> {
                 nameWidth -= font.width(group.tag) + 12;
             }
             String name = data.name == null || data.name.isBlank() ? data.ip : data.name;
-            g.text(font, SyncGroupsScreen.clip(font, name, nameWidth), textX, y + 1, 0xFFFFFF);
+            g.text(font, SyncGroupsScreen.clip(font, name, nameWidth), textX, y + 1, 0xFFFFFFFF);
             if (group != null) {
                 int cx = textX + Math.min(nameWidth, font.width(name)) + 6;
                 g.fill(cx - 3, y - 1, cx + font.width(group.tag) + 3, y + 10, 0x90101010);
-                g.text(font, group.tag, cx, y, group.colorInt());
+                g.text(font, group.tag, cx, y, 0xFF000000 | group.colorInt());
             }
             g.text(font, SyncGroupsScreen.clip(font, data.ip, getContentWidth() - TEXT_X - 8),
-                    textX, y + 13, 0x909090);
+                    textX, y + 13, 0xFF909090);
         }
 
         @Override

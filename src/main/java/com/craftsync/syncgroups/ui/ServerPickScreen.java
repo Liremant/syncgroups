@@ -2,8 +2,6 @@ package com.craftsync.syncgroups.ui;
 
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.Button;
-import net.minecraft.client.gui.layouts.HeaderAndFooterLayout;
-import net.minecraft.client.gui.layouts.LinearLayout;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.multiplayer.ServerData;
 import net.minecraft.client.multiplayer.ServerList;
@@ -18,10 +16,10 @@ import java.util.Set;
  * Spec §5.2: the saved-server list with a checkbox per entry.
  * "Next" is enabled once ≥2 servers are selected.
  *
- * The list is a vanilla ObjectSelectionList (ServerPickList) in a
- * HeaderAndFooterLayout, so scrolling/clipping/resize come from vanilla instead
- * of the manual wheel-scroll widget rebuild that used to throw the selection
- * away: {@link #selected} lives here, not in the rows.
+ * The list is a vanilla ObjectSelectionList (ServerPickList) with explicit
+ * bounds, so scrolling/clipping/resize come from vanilla instead of the manual
+ * wheel-scroll widget rebuild that used to throw the selection away:
+ * {@link #selected} lives here, not in the rows.
  */
 public class ServerPickScreen extends Screen {
 
@@ -33,9 +31,12 @@ public class ServerPickScreen extends Screen {
     /** One-line feedback under the list; null while nothing is wrong. */
     Component hint;
 
-    private HeaderAndFooterLayout layout;
     private ServerPickList list;
     private Button next;
+
+    /** Header (title + step line) and footer (two stacked buttons) reserved heights. */
+    private static final int HEADER = 40;
+    private static final int FOOTER = 56;
 
     public ServerPickScreen(Screen parent, Screen doneScreen) {
         super(Component.translatable("syncgroups.pick.title"));
@@ -51,21 +52,17 @@ public class ServerPickScreen extends Screen {
         if (list != null) {
             list.closeIcons();
         }
-        // Two stacked buttons need 44px; the default 33px footer would push the
-        // bottom one past the screen edge and let the list eat its clicks.
-        layout = new HeaderAndFooterLayout(this, 36, 56);
-        layout.addTitleHeader(title, font);
+        list = new ServerPickList(minecraft, this, height - HEADER - FOOTER);
 
-        list = new ServerPickList(minecraft, this, layout.getContentHeight());
-        layout.addToContents(list);
+        next = Button.builder(Component.translatable("syncgroups.pick.next"), b -> onNext())
+                .bounds(width / 2 - 100, height - FOOTER + 4, 200, 20)
+                .build();
+        addRenderableWidget(next);
+        addRenderableWidget(Button.builder(Component.translatable("gui.cancel"), b -> onClose())
+                .bounds(width / 2 - 100, height - FOOTER + 28, 200, 20)
+                .build());
 
-        LinearLayout footer = layout.addToFooter(LinearLayout.vertical().spacing(4));
-        footer.defaultCellSetting().alignHorizontallyCenter();
-        next = Button.builder(Component.translatable("syncgroups.pick.next"), b -> onNext()).build();
-        footer.addChild(next);
-        footer.addChild(Button.builder(Component.translatable("gui.cancel"), b -> onClose()).build());
-
-        layout.visitWidgets(w -> addRenderableWidget(w));
+        addRenderableWidget(list);
         repositionElements();
         setInitialFocus(list);
     }
@@ -73,9 +70,15 @@ public class ServerPickScreen extends Screen {
     @Override
     protected void repositionElements() {
         if (list != null) {
-            list.updateSize(width, layout);
+            // Explicit bounds: x=0, y right under the header. layout.getContentHeight()
+            // at construction time proved unreliable on some window shapes (rows
+            // rendered under the footer, clicks eaten).
+            list.updateSizeAndPosition(width, height - HEADER - FOOTER, HEADER);
         }
-        layout.arrangeElements();
+        if (next != null) {
+            next.setX(width / 2 - 100);
+            next.setY(height - FOOTER + 4);
+        }
     }
 
     private void onNext() {
@@ -98,14 +101,13 @@ public class ServerPickScreen extends Screen {
     @Override
     public void extractRenderState(GuiGraphicsExtractor g, int mouseX, int mouseY, float partialTick) {
         super.extractRenderState(g, mouseX, mouseY, partialTick);
-        g.centeredText(font, Component.translatable("syncgroups.pick.step"), width / 2,
-                layout.getHeaderHeight() - 3, 0x909090);
+        g.centeredText(font, Component.translatable("syncgroups.pick.step"), width / 2, 26, 0x909090);
         Component line = hint != null
                 ? hint
                 : servers.size() < 2
                         ? Component.translatable("syncgroups.pick.needTwo")
                         : Component.translatable("syncgroups.pick.selected", selected.size());
-        g.centeredText(font, line, width / 2, height - layout.getFooterHeight() - 12,
+        g.centeredText(font, line, width / 2, height - FOOTER - 14,
                 hint != null ? 0xFF5555 : 0x909090);
     }
 
