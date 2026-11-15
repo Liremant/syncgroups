@@ -26,5 +26,6 @@
   },
   "suggests": {
     "modmenu": "*"
-  }
+  },
+  "icon": "assets/syncgroups/icon.png"
 }
