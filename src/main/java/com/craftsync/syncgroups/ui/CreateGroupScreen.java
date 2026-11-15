@@ -40,6 +40,7 @@ public class CreateGroupScreen extends Screen {
     private Component error;
     /** Typed tag, restored across init() (window resize rebuilds the box empty). */
     private String tagText = "";
+    private Button create;
 
     public CreateGroupScreen(Screen parent, Screen doneScreen, List<ServerData> servers) {
         super(Component.translatable("syncgroups.create.title"));
@@ -75,16 +76,24 @@ public class CreateGroupScreen extends Screen {
         addRenderableWidget(Button.builder(Component.translatable("gui.cancel"), b -> onClose())
                 .bounds(rx, 102, COLUMN_W, 20)
                 .build());
-        Button create = Button.builder(Component.translatable("syncgroups.create.confirm"), b -> onCreate())
+        // Keep a field reference: the responder below updates it as the tag is typed.
+        create = Button.builder(Component.translatable("syncgroups.create.confirm"), b -> onCreate())
                 .bounds(rx, 128, COLUMN_W, 20)
                 .build();
         create.active = !tagText.isBlank();
         addRenderableWidget(create);
+        // Registered after `create` exists: setValue above fires it once, and every
+        // keystroke after that keeps the button's state in sync with the text.
+        tagBox.setResponder(s -> {
+            tagText = s;
+            create.active = !s.isBlank();
+        });
     }
 
     private void onCreate() {
         String tag = tagBox.getValue().trim();
         if (tag.isEmpty()) {
+            error = Component.translatable("syncgroups.create.needTag");
             return;
         }
         try {
