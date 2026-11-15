@@ -34,6 +34,8 @@ public class ServerPickScreen extends Screen {
     private final Set<String> selected = new LinkedHashSet<>();
     private Button next;
     private int scroll;
+    /** One-line feedback under the list; null while nothing is wrong. */
+    private Component hint;
 
     public ServerPickScreen(Screen parent, Screen doneScreen) {
         super(Component.translatable("syncgroups.pick.title"));
@@ -57,12 +59,13 @@ public class ServerPickScreen extends Screen {
                     .pos(x0, y0 + (i - scroll) * ROW_HEIGHT)
                     .selected(selected.contains(address))
                     .onValueChange((cb, checked) -> {
+                        com.craftsync.syncgroups.core.Diag.info("PICK: %s -> %s", address, checked ? "on" : "off");
                         if (checked) {
                             selected.add(address);
                         } else {
                             selected.remove(address);
                         }
-                        refreshNext();
+                        hint = null;
                     })
                     .build();
             addRenderableWidget(box);
@@ -74,19 +77,12 @@ public class ServerPickScreen extends Screen {
         addRenderableWidget(Button.builder(Component.translatable("gui.cancel"), b -> onClose())
                 .bounds(width / 2 - 100, height - 52, 200, 20)
                 .build());
-        refreshNext();
     }
 
     private static Component serverLabel(ServerData data) {
         // A saved entry can have no name yet (a hand-edited servers.dat): show the address.
         String name = data.name == null || data.name.isBlank() ? data.ip : data.name;
         return Component.literal(name + " (" + data.ip + ")");
-    }
-
-    private void refreshNext() {
-        if (next != null) {
-            next.active = selected.size() >= 2;
-        }
     }
 
     private void onNext() {
@@ -97,8 +93,11 @@ public class ServerPickScreen extends Screen {
                 picked.add(data);
             }
         }
+        // Never a dead end: with fewer than two picked the button says what is
+        // missing instead of silently doing nothing.
         if (picked.size() < 2) {
-            return; // the button is disabled; this only guards a stale click
+            hint = Component.translatable("syncgroups.pick.needTwoPicked", picked.size());
+            return;
         }
         minecraft.setScreenAndShow(new CreateGroupScreen(this, doneScreen, picked));
     }
@@ -108,10 +107,12 @@ public class ServerPickScreen extends Screen {
         super.extractRenderState(g, mouseX, mouseY, partialTick);
         g.centeredText(font, title, width / 2, 12, 0xFFFFFF);
         g.centeredText(font, Component.translatable("syncgroups.pick.step"), width / 2, 26, 0x909090);
-        g.centeredText(font, servers.size() < 2
+        Component line = hint != null
+                ? hint
+                : servers.size() < 2
                         ? Component.translatable("syncgroups.pick.needTwo")
-                        : Component.translatable("syncgroups.pick.selected", selected.size()),
-                width / 2, height - 68, servers.size() < 2 ? 0xE0C060 : 0x909090);
+                        : Component.translatable("syncgroups.pick.selected", selected.size());
+        g.centeredText(font, line, width / 2, height - 68, hint != null ? 0xFF5555 : 0x909090);
     }
 
     @Override
