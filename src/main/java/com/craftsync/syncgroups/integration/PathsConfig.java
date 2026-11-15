@@ -53,6 +53,8 @@ public final class PathsConfig {
     public int pushQuiescenceMs = 1500;
     /** Draw the group tag on server entries in the multiplayer list. */
     public boolean showGroupTags = true;
+    /** Show the Sync Groups button on the multiplayer server list. */
+    public boolean showMenuButton = true;
     /**
      * "copy" — the group folder holds copies that are pulled on join and pushed
      * on leave; local data stays real and self-contained.

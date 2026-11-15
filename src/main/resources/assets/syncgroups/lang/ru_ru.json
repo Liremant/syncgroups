@@ -54,5 +54,7 @@
   "syncgroups.toast.renamed": "Группа переименована в «%s»",
   "syncgroups.toast.recolored": "Цвет «%s» сохранён",
   "syncgroups.toast.created": "Группа «%s» создана",
-  "syncgroups.manage.selectFirst": "Кликните на строку сервера, затем кнопки внизу"
+  "syncgroups.manage.selectFirst": "Кликните на строку сервера, затем кнопки внизу",
+  "syncgroups.config.menubutton": "Кнопка меню: %s",
+  "syncgroups.config.menubutton.tip": "Показывать кнопку Sync Groups на экране мультиплеера. Выключите, чтобы не менять меню — группы продолжат работать."
 }

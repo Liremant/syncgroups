@@ -54,5 +54,7 @@
   "syncgroups.toast.renamed": "Group renamed to '%s'",
   "syncgroups.toast.recolored": "Colour of '%s' saved",
   "syncgroups.toast.created": "Group '%s' created",
-  "syncgroups.manage.selectFirst": "Click a server row, then use the buttons below"
+  "syncgroups.manage.selectFirst": "Click a server row, then use the buttons below",
+  "syncgroups.config.menubutton": "Menu button: %s",
+  "syncgroups.config.menubutton.tip": "Show the Sync Groups button on the multiplayer screen. Turn it off to play with menus untouched — groups keep syncing."
 }

@@ -4,6 +4,7 @@ import com.craftsync.syncgroups.SyncGroupsMod;
 import com.craftsync.syncgroups.core.Colors;
 import com.craftsync.syncgroups.core.Group;
 import com.craftsync.syncgroups.core.ServerKey;
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.EditBox;
@@ -41,6 +42,8 @@ public class CreateGroupScreen extends Screen {
     /** Typed tag, restored across init() (window resize rebuilds the box empty). */
     private String tagText = "";
     private Button create;
+    /** Seeding moves whole folders (Xaero maps are hundreds of MB): off the render thread. */
+    private volatile boolean busy;
 
     public CreateGroupScreen(Screen parent, Screen doneScreen, List<ServerData> servers) {
         super(Component.translatable("syncgroups.create.title"));
@@ -98,37 +101,67 @@ public class CreateGroupScreen extends Screen {
             error = Component.translatable("syncgroups.create.needTag");
             return;
         }
-        try {
-            List<String> keys = new ArrayList<>();
-            Map<String, String> names = new LinkedHashMap<>();
-            for (ServerData server : servers) {
-                String key = ServerKey.normalize(server.ip);
-                // Two saved entries can point at the same address; a duplicated key
-                // would put the same server in the group twice and dissolve the whole
-                // group on the first Remove.
-                if (names.containsKey(key)) {
-                    continue;
-                }
-                keys.add(key);
-                names.put(key, server.name);
-            }
-            if (keys.size() < 2) {
-                error = Component.translatable("syncgroups.create.sameServers");
-                return;
-            }
-            Group group = SyncGroupsMod.engine().createGroup(tag, picker.colorInt(), keys, names, SyncGroupsMod.store());
-            SyncGroupsMod.LOGGER.info("Created sync group '{}' ({}) for {} server(s)", tag, group.id, keys.size());
-            SyncGroupsMod.toast(Component.translatable("syncgroups.toast.title"),
-                    Component.translatable("syncgroups.toast.created", tag));
-            // Spec: after creating a group, return to the multiplayer server list.
-            minecraft.setScreenAndShow(doneScreen);
-        } catch (Exception e) {
-            // A failed seed (locked file, no write permission, a server already
-            // grouped) must not look like a successful create: report it and stay
-            // on the screen so the player can retry or cancel.
-            SyncGroupsMod.LOGGER.error("Failed to create group '{}'", tag, e);
-            error = Component.translatable("syncgroups.create.failed", String.valueOf(e.getMessage()));
+        if (busy) {
+            return;
         }
+        busy = true;
+        error = null;
+        create.active = false;
+        tagBox.setValue(tag); // persist into tagText for the rebuild
+        Thread worker = new Thread(() -> {
+            String failure = null;
+            Group group = null;
+            int serverCount = 0;
+            try {
+                List<String> keys = new ArrayList<>();
+                Map<String, String> names = new LinkedHashMap<>();
+                for (ServerData server : servers) {
+                    String key = ServerKey.normalize(server.ip);
+                    // Two saved entries can point at the same address; a duplicated key
+                    // would put the same server in the group twice and dissolve the whole
+                    // group on the first Remove.
+                    if (!names.containsKey(key)) {
+                        keys.add(key);
+                        names.put(key, server.name);
+                    }
+                }
+                if (keys.size() < 2) {
+                    failure = Component.translatable("syncgroups.create.sameServers").getString();
+                } else {
+                    group = SyncGroupsMod.engine().createGroup(tag, picker.colorInt(), keys, names,
+                            SyncGroupsMod.store());
+                    serverCount = keys.size();
+                }
+            } catch (Exception e) {
+                // A failed seed (locked file, no write permission, a server already
+                // grouped) must not look like a successful create.
+                SyncGroupsMod.LOGGER.error("Failed to create group '{}'", tag, e);
+                failure = String.valueOf(e.getMessage());
+            }
+            boolean ok = failure == null && group != null;
+            String createdTag = tag;
+            Group created = group;
+            int count = serverCount;
+            final String failureMsg = failure == null
+                    ? Component.translatable("syncgroups.create.needTag").getString()
+                    : Component.translatable("syncgroups.create.failed", failure).getString();
+            Minecraft.getInstance().execute(() -> {
+                busy = false;
+                if (ok) {
+                    SyncGroupsMod.LOGGER.info("Created sync group '{}' ({}) for {} server(s)",
+                            createdTag, created.id, count);
+                    SyncGroupsMod.toast(Component.translatable("syncgroups.toast.title"),
+                            Component.translatable("syncgroups.toast.created", createdTag));
+                    // Spec: after creating a group, return to the multiplayer server list.
+                    minecraft.setScreenAndShow(doneScreen);
+                } else {
+                    error = Component.translatable("syncgroups.create.failed", failureMsg);
+                    rebuildWidgets();
+                }
+            });
+        }, "syncgroups-create");
+        worker.setDaemon(true);
+        worker.start();
     }
 
     @Override

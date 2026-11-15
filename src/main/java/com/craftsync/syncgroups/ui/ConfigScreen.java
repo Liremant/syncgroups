@@ -70,6 +70,15 @@ public class ConfigScreen extends Screen {
         }).tooltip(tip("syncgroups.config.push.tip")).bounds(cx, y, w, h).build());
         y += gap + 8;
 
+        addRenderableWidget(Button.builder(menuButtonLabel(cfg), b -> {
+            cfg.showMenuButton = !cfg.showMenuButton;
+            b.setMessage(menuButtonLabel(cfg));
+            if (!SyncGroupsMod.saveConfig()) {
+                status = Component.translatable("syncgroups.config.saveFailed");
+            }
+        }).tooltip(tip("syncgroups.config.menubutton.tip")).bounds(cx, y, w, h).build());
+        y += gap;
+
         addRenderableWidget(Button.builder(Component.translatable("syncgroups.config.openFolder"), b -> {
             try {
                 // 26.3 moved this from Util.OS.openPath to Blaze3D.openPath.
@@ -105,6 +114,11 @@ public class ConfigScreen extends Screen {
         return Component.translatable("syncgroups.config.mode",
                 Component.translatable(cfg.symlinkMode()
                         ? "syncgroups.config.mode.symlink" : "syncgroups.config.mode.copy"));
+    }
+
+    private static Component menuButtonLabel(PathsConfig cfg) {
+        return Component.translatable("syncgroups.config.menubutton",
+                onOff(cfg.showMenuButton));
     }
 
     private static Component pushLabel(PathsConfig cfg) {

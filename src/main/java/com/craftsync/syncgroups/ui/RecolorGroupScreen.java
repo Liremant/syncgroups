@@ -5,12 +5,13 @@ import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 
+import java.util.function.Consumer;
 import java.util.function.Supplier;
 
 /**
- * Tiny dialog: the existing HSV ColorPicker bound to a group. Applies the picked
- * colour through {@code onDone} on the calling screen — the caller owns the store
- * write. The colour survives a rebuild (resize) the same way CreateGroupScreen's does.
+ * Tiny dialog: the existing HSV ColorPicker bound to a group. Hands the picked
+ * colour to {@code onDone} — the caller owns the store write. The picked colour
+ * survives a rebuild (resize) the same way CreateGroupScreen's tag does.
  */
 public class RecolorGroupScreen extends Screen {
 
@@ -19,11 +20,11 @@ public class RecolorGroupScreen extends Screen {
 
     private final Screen parent;
     private final Supplier<Integer> currentColor;
-    private final Runnable onDone;
+    private final Consumer<Integer> onDone;
     private ColorPicker picker;
     private int initialColor;
 
-    public RecolorGroupScreen(Screen parent, Supplier<Integer> currentColor, Runnable onDone) {
+    public RecolorGroupScreen(Screen parent, Supplier<Integer> currentColor, Consumer<Integer> onDone) {
         super(Component.translatable("syncgroups.recolor.title"));
         this.parent = parent;
         this.currentColor = currentColor;
@@ -36,22 +37,24 @@ public class RecolorGroupScreen extends Screen {
         if (picker != null) {
             initialColor = picker.colorInt();
         }
-        picker = new ColorPicker(Math.max(8, (width - PICKER_W) / 2), height / 2 - 60, PICKER_W, PICKER_H, initialColor);
+        picker = new ColorPicker(Math.max(8, (width - PICKER_W) / 2), 60, PICKER_W, PICKER_H, initialColor);
 
         addRenderableWidget(Button.builder(Component.translatable("gui.done"), b -> {
-                    onDone.run();
+                    onDone.accept(picker.colorInt());
                     onClose();
-                }).bounds(width / 2 - 100, height / 2 + 96, 98, 20).build());
+                }).bounds(width / 2 - 100, height - FOOTER_BUTTON_Y, 98, 20).build());
         addRenderableWidget(Button.builder(Component.translatable("gui.cancel"), b -> onClose())
-                .bounds(width / 2 + 2, height / 2 + 96, 98, 20).build());
+                .bounds(width / 2 + 2, height - FOOTER_BUTTON_Y, 98, 20).build());
     }
 
     @Override
     public void extractRenderState(GuiGraphicsExtractor g, int mouseX, int mouseY, float partialTick) {
         super.extractRenderState(g, mouseX, mouseY, partialTick);
-        g.centeredText(font, title, width / 2, height / 2 - 84, 0xFFFFFF);
+        g.centeredText(font, title, width / 2, 24, 0xFFFFFF);
         picker.draw(g, font);
     }
+
+    private static final int FOOTER_BUTTON_Y = 30; // buttons at height-30; picker never overlaps
 
     @Override
     public boolean mouseClicked(net.minecraft.client.input.MouseButtonEvent event, boolean doubled) {

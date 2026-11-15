@@ -80,7 +80,7 @@ public class ServerPickList extends ObjectSelectionList<ServerPickList.Entry> {
         return Math.min(300, this.width - 60);
     }
 
-    /** Closes every favicon texture; called before a new list is built and from Screen.removed(). */
+    /** Releases our own server-icon textures; called before a rebuild and from Screen.removed(). */
     public void closeIcons() {
         for (Entry e : children()) {
             e.close();
@@ -90,12 +90,16 @@ public class ServerPickList extends ObjectSelectionList<ServerPickList.Entry> {
     public class Entry extends ObjectSelectionList.Entry<ServerPickList.Entry> implements AutoCloseable {
 
         private final ServerData data;
-        private final FaviconTexture icon;
+        /** Own texture id — NOT FaviconTexture: its forServer() key is shared with the
+         * vanilla server list, and closing ours killed vanilla's icon → purple favicons. */
+        private final net.minecraft.resources.Identifier textureId;
+        private boolean hasIcon;
         private byte[] lastIconBytes;
 
         Entry(ServerData data) {
             this.data = data;
-            this.icon = FaviconTexture.forServer(minecraft.getTextureManager(), data.ip);
+            this.textureId = net.minecraft.resources.Identifier.withDefaultNamespace(
+                    "syncgroups/servericon/" + ServerKey.sanitize(data.ip));
         }
 
         @Override
@@ -104,10 +108,15 @@ public class ServerPickList extends ObjectSelectionList<ServerPickList.Entry> {
             int x = getContentX();
             int y = getContentY();
             drawCheckbox(g, x, y);
-            // textureLocation() falls back to vanilla's unknown-server texture
-            // (MISSING_LOCATION) while nothing has been uploaded.
-            g.blit(RenderPipelines.GUI_TEXTURED, icon.textureLocation(), x + BOX + 4, y + 2,
-                    0f, 0f, ICON, ICON, ICON, ICON);
+            if (hasIcon) {
+                g.blit(RenderPipelines.GUI_TEXTURED, textureId, x + BOX + 4, y + 2,
+                        0f, 0f, ICON, ICON, ICON, ICON);
+            } else {
+                // vanilla's unknown-server placeholder while nothing has been uploaded
+                g.blit(RenderPipelines.GUI_TEXTURED,
+                        net.minecraft.resources.Identifier.withDefaultNamespace("textures/misc/unknown_server.png"),
+                        x + BOX + 4, y + 2, 0f, 0f, ICON, ICON, ICON, ICON);
+            }
 
             Group group = SyncGroupsMod.store().byServer(ServerKey.normalize(data.ip)).orElse(null);
             var font = ServerPickList.this.minecraft.font;
@@ -148,22 +157,28 @@ public class ServerPickList extends ObjectSelectionList<ServerPickList.Entry> {
                 return;
             }
             lastIconBytes = bytes;
-            icon.clear();
-            if (bytes != null) {
-                try {
-                    // upload() takes ownership of the image (same as vanilla's server entry).
-                    icon.upload(com.mojang.blaze3d.platform.NativeImage.read(bytes));
-                } catch (Exception e) {
-                    SyncGroupsMod.LOGGER.warn("Invalid icon for server {}", data.ip, e);
-                }
+            var tm = minecraft.getTextureManager();
+            if (bytes == null) {
+                // No icon yet: unregister ours so the vanilla unknown-server placeholder
+                // path applies; the texture id stays reserved for this screen.
+                tm.release(textureId);
+                hasIcon = false;
+                return;
+            }
+            try {
+                com.mojang.blaze3d.platform.NativeImage img = com.mojang.blaze3d.platform.NativeImage.read(bytes);
+                tm.register(textureId, new net.minecraft.client.renderer.texture.DynamicTexture(
+                        () -> "syncgroups-server-" + data.ip, img));
+                hasIcon = true;
+            } catch (Exception e) {
+                SyncGroupsMod.LOGGER.warn("Invalid icon for server {}", data.ip, e);
             }
         }
 
         @Override
         public void close() {
-            if (!icon.isClosed()) {
-                icon.close();
-            }
+            minecraft.getTextureManager().release(textureId);
+            hasIcon = false;
         }
 
         @Override

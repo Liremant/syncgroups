@@ -168,10 +168,10 @@ public class SyncGroupsScreen extends Screen {
         if (row == null || busy) {
             return;
         }
-        minecraft.setScreenAndShow(new RecolorGroupScreen(this, row.group()::colorInt, () -> {
+        minecraft.setScreenAndShow(new RecolorGroupScreen(this, row.group()::colorInt, picked -> {
             try {
                 Group updated = row.group().copyOf();
-                updated.color = String.format("#%06X", 0xFFFFFF & row.group().colorInt());
+                updated.color = String.format("#%06X", 0xFFFFFF & picked);
                 SyncGroupsMod.store().update(updated);
                 SyncGroupsMod.toast(Component.translatable("syncgroups.toast.title"),
                         Component.translatable("syncgroups.toast.recolored", updated.tag));

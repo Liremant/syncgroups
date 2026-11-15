@@ -36,6 +36,9 @@ public abstract class JoinMultiplayerScreenMixin extends Screen {
 
     @Inject(method = "init()V", at = @At("TAIL"))
     private void syncgroups$addButton(CallbackInfo ci) {
+        if (SyncGroupsMod.config() != null && !SyncGroupsMod.config().showMenuButton) {
+            return; // user hid the button in the mod settings
+        }
         Screen self = (Screen) (Object) this;
         syncgroups$button = Button.builder(Component.translatable("syncgroups.title"),
                         b -> Minecraft.getInstance().setScreenAndShow(syncgroups$openScreen(self)))
