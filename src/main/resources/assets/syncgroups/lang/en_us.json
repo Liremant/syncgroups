@@ -56,5 +56,8 @@
   "syncgroups.toast.created": "Group '%s' created",
   "syncgroups.manage.selectFirst": "Click a server row, then use the buttons below",
   "syncgroups.config.menubutton": "Menu button: %s",
-  "syncgroups.config.menubutton.tip": "Show the Sync Groups button on the multiplayer screen. Turn it off to play with menus untouched — groups keep syncing."
+  "syncgroups.config.menubutton.tip": "Show the Sync Groups button on the multiplayer screen. Turn it off to play with menus untouched — groups keep syncing.",
+  "syncgroups.toast.dissolved": "Dissolve group '%s'",
+  "syncgroups.manage.dissolve": "Dissolve group",
+  "syncgroups.manage.confirm.dissolve.message": "Removing any server leaves '%s' with one server, so the group is dissolved. Every server gets its own copy of the shared data — this can take a while."
 }

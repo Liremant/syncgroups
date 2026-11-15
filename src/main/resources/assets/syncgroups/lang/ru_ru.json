@@ -56,5 +56,8 @@
   "syncgroups.toast.created": "Группа «%s» создана",
   "syncgroups.manage.selectFirst": "Кликните на строку сервера, затем кнопки внизу",
   "syncgroups.config.menubutton": "Кнопка меню: %s",
-  "syncgroups.config.menubutton.tip": "Показывать кнопку Sync Groups на экране мультиплеера. Выключите, чтобы не менять меню — группы продолжат работать."
+  "syncgroups.config.menubutton.tip": "Показывать кнопку Sync Groups на экране мультиплеера. Выключите, чтобы не менять меню — группы продолжат работать.",
+  "syncgroups.toast.dissolved": "Распустить группу «%s»",
+  "syncgroups.manage.dissolve": "Распустить",
+  "syncgroups.manage.confirm.dissolve.message": "После удаления любого сервера в «%s» останется один, поэтому группа распускается. Каждому серверу будет сделана своя копия общих данных — это может занять время."
 }

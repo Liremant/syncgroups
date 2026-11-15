@@ -31,6 +31,7 @@ public class SyncGroupsScreen extends Screen {
     private Button rename;
     private Button recolor;
     private Button remove;
+    private Button dissolve;
     /** id of the group acted on by the footer buttons; selected by clicking a row. */
     private String selectedGroupId;
     /**
@@ -79,6 +80,9 @@ public class SyncGroupsScreen extends Screen {
         // Rename/Recolor/Remove act on the row picked with a click; all three sit
         // on one footer line so the rows stay readable.
         int ax = width / 2 - 155;
+        if (width < 480) {
+            ax = Math.max(8, width / 2 - 156);
+        }
         rename = Button.builder(Component.translatable("syncgroups.manage.rename"), b -> askRename())
                 .bounds(ax, height - 76, 100, 20)
                 .build();
@@ -91,6 +95,14 @@ public class SyncGroupsScreen extends Screen {
         addRenderableWidget(rename);
         addRenderableWidget(recolor);
         addRenderableWidget(remove);
+        updateActionButtons();
+        // Whole-group dissolve gets its own clearly-labelled button: the destructive
+        // "remove every server and copy everything out" action must not share a slot
+        // with per-server removal.
+        dissolve = Button.builder(Component.translatable("syncgroups.manage.dissolve"), b -> askDissolve())
+                .bounds(ax, height - 100, 312, 20)
+                .build();
+        addRenderableWidget(dissolve);
         updateActionButtons();
         // "Done" is the screen's primary exit — keep it at the very bottom, the
         // same slot vanilla uses, with the list action stacked above it.
@@ -114,6 +126,7 @@ public class SyncGroupsScreen extends Screen {
         rename.active = hasRow && !busy;
         recolor.active = hasRow && !busy;
         remove.active = hasRow && !busy;
+        dissolve.active = hasRow && !busy;
     }
 
     /**
@@ -144,6 +157,53 @@ public class SyncGroupsScreen extends Screen {
      * store write fails the on-screen rows (which the next rebuild re-reads from
      * the store) never disagree with groups.json.
      */
+    /**
+     * Dissolves the whole group of the selected row: every server is detached with
+     * a real copy of the shared data. Heavy (same copy-out as auto-dissolve) and
+     * irreversible, so it asks first and runs off-thread.
+     */
+    private void askDissolve() {
+        Row row = selectedRow();
+        if (row == null || busy) {
+            return;
+        }
+        minecraft.setScreenAndShow(new ConfirmScreen(confirmed -> {
+            minecraft.setScreenAndShow(this);
+            if (!confirmed) {
+                return;
+            }
+            busy = true;
+            error = null;
+            rebuildWidgets();
+            Thread worker = new Thread(() -> {
+                String failure = null;
+                try {
+                    SyncGroupsMod.engine().dissolveGroup(row.group(), SyncGroupsMod.store());
+                    SyncGroupsMod.LOGGER.info("Group '{}' dissolved on request", row.group().tag);
+                    SyncGroupsMod.toast(Component.translatable("syncgroups.toast.title"),
+                            Component.translatable("syncgroups.toast.dissolved", row.group().tag));
+                } catch (IOException | RuntimeException e) {
+                    SyncGroupsMod.LOGGER.error("Failed to dissolve group", e);
+                    failure = String.valueOf(e.getMessage());
+                }
+                String msg = failure;
+                Minecraft.getInstance().execute(() -> {
+                    busy = false;
+                    if (msg != null) {
+                        error = Component.translatable("syncgroups.manage.removeFailed", msg);
+                    }
+                    if (open) {
+                        rebuildWidgets();
+                    }
+                });
+            }, "syncgroups-dissolve");
+            worker.setDaemon(true);
+            worker.start();
+        }, Component.translatable("syncgroups.manage.confirm.title"),
+                Component.translatable("syncgroups.manage.confirm.dissolve.message",
+                        row.group().tag)));
+    }
+
     private void askRename() {
         Row row = selectedRow();
         if (row == null || busy) {
@@ -246,9 +306,9 @@ public class SyncGroupsScreen extends Screen {
         }
         if (busy) {
             g.centeredText(font, Component.translatable("syncgroups.manage.busy"),
-                    width / 2, height - 86, 0xE0C060);
+                    width / 2, height - 106, 0xE0C060);
         } else if (error != null) {
-            g.centeredText(font, error, width / 2, height - 86, 0xFF5555);
+            g.centeredText(font, error, width / 2, height - 106, 0xFF5555);
         }
     }
 

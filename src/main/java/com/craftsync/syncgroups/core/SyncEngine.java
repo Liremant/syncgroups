@@ -792,6 +792,23 @@ public final class SyncEngine {
 
     // -------------------------------------------------------------- dissolve
 
+    /**
+     * Dissolves a whole group on demand: every server gets a real copy of the
+     * shared data and leaves the group, the group itself moves to _dissolved.
+     * The servers stay in the saved-server list, just no longer grouped.
+     */
+    public void dissolveGroup(Group group, GroupsStore store) throws IOException {
+        Group working = group.copyOf();
+        List<String> all = new ArrayList<>(working.servers);
+        synchronized (fsLock) {
+            materializeLinks(working, all);
+            working.servers.clear();
+            dissolve(working, store);
+        }
+        Diag.info("DISSOLVE: group '%s' dissolved on request (%d server(s) detached)",
+                group.tag, all.size());
+    }
+
     /** Spec §6: never delete group data silently — move to _dissolved. */
     public void dissolve(Group group, GroupsStore store) throws IOException {
         Path stamp = rootDir.resolve("_dissolved").resolve(group.id + "_" + Instant.now().getEpochSecond());
