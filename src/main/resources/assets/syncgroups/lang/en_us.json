@@ -45,5 +45,13 @@
   "syncgroups.manage.busy": "Copying the shared data out of the group — do not quit the game",
   "syncgroups.config.saveFailed": "Could not write paths.json — changes are in effect but will be lost on restart",
   "syncgroups.pick.needTwoPicked": "Pick %d more server(s) — a group needs at least two",
-  "syncgroups.create.needTag": "Enter a tag for the group first"
+  "syncgroups.create.needTag": "Enter a tag for the group first",
+  "syncgroups.manage.rename": "Rename",
+  "syncgroups.manage.recolor": "Recolor",
+  "syncgroups.rename.title": "Rename group",
+  "syncgroups.recolor.title": "Group colour",
+  "syncgroups.toast.title": "Sync Groups",
+  "syncgroups.toast.renamed": "Group renamed to '%s'",
+  "syncgroups.toast.recolored": "Colour of '%s' saved",
+  "syncgroups.toast.created": "Group '%s' created"
 }

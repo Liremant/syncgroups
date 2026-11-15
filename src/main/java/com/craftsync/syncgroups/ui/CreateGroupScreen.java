@@ -116,6 +116,8 @@ public class CreateGroupScreen extends Screen {
             }
             Group group = SyncGroupsMod.engine().createGroup(tag, picker.colorInt(), keys, names, SyncGroupsMod.store());
             SyncGroupsMod.LOGGER.info("Created sync group '{}' ({}) for {} server(s)", tag, group.id, keys.size());
+            SyncGroupsMod.toast(Component.translatable("syncgroups.toast.title"),
+                    Component.translatable("syncgroups.toast.created", tag));
             // Spec: after creating a group, return to the multiplayer server list.
             minecraft.setScreenAndShow(doneScreen);
         } catch (Exception e) {

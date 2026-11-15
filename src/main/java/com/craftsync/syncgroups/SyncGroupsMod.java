@@ -11,7 +11,10 @@ import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.fabricmc.loader.api.FabricLoader;
+import net.minecraft.client.gui.components.toasts.SystemToast;
+import net.minecraft.client.gui.components.toasts.ToastManager;
 import net.minecraft.client.multiplayer.ServerData;
+import net.minecraft.network.chat.Component;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -281,6 +284,19 @@ public class SyncGroupsMod implements ClientModInitializer {
         } catch (IOException e) {
             Diag.error("MIGRATE: could not move " + oldRoot + " to " + newRoot
                     + " — continuing with the new location, old data left untouched", e);
+        }
+    }
+
+    /** One toast id for all syncgroups feedback, so toasts replace, not stack. */
+    private static final SystemToast.SystemToastId TOAST_ID = new SystemToast.SystemToastId();
+
+    /** Render-thread only; callers on worker threads go through Minecraft.execute. */
+    public static void toast(Component title, Component msg) {
+        try {
+            ToastManager tm = net.minecraft.client.Minecraft.getInstance().gui.toastManager();
+            SystemToast.addOrUpdate(tm, TOAST_ID, title, msg);
+        } catch (Exception e) {
+            LOGGER.warn("Could not show toast: {}", e.toString());
         }
     }
 

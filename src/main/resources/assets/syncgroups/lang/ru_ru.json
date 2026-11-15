@@ -45,5 +45,13 @@
   "syncgroups.manage.busy": "Копирую общие данные из группы — не закрывайте игру",
   "syncgroups.config.saveFailed": "Не удалось записать paths.json — изменения действуют, но пропадут после перезапуска",
   "syncgroups.pick.needTwoPicked": "Выберите ещё %d сервер(а) — группе нужно минимум два",
-  "syncgroups.create.needTag": "Сначала введите название группы"
+  "syncgroups.create.needTag": "Сначала введите название группы",
+  "syncgroups.manage.rename": "Название",
+  "syncgroups.manage.recolor": "Цвет",
+  "syncgroups.rename.title": "Переименовать группу",
+  "syncgroups.recolor.title": "Цвет группы",
+  "syncgroups.toast.title": "Sync Groups",
+  "syncgroups.toast.renamed": "Группа переименована в «%s»",
+  "syncgroups.toast.recolored": "Цвет «%s» сохранён",
+  "syncgroups.toast.created": "Группа «%s» создана"
 }

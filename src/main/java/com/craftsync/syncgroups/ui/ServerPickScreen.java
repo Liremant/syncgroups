@@ -2,7 +2,8 @@ package com.craftsync.syncgroups.ui;
 
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.Button;
-import net.minecraft.client.gui.components.Checkbox;
+import net.minecraft.client.gui.layouts.HeaderAndFooterLayout;
+import net.minecraft.client.gui.layouts.LinearLayout;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.multiplayer.ServerData;
 import net.minecraft.client.multiplayer.ServerList;
@@ -15,27 +16,26 @@ import java.util.Set;
 
 /**
  * Spec §5.2: the saved-server list with a checkbox per entry.
- * "Next" is enabled once ≥2 servers are selected. Simple manual scroll —
- * rows that do not fit are reached with the mouse wheel.
+ * "Next" is enabled once ≥2 servers are selected.
  *
- * The selection lives here, not in the widgets: rebuilding the widget list on
- * scroll/resize used to throw it away, so ticking a server, scrolling, and
- * pressing Next silently grouped fewer servers than the player picked.
+ * The list is a vanilla ObjectSelectionList (ServerPickList) in a
+ * HeaderAndFooterLayout, so scrolling/clipping/resize come from vanilla instead
+ * of the manual wheel-scroll widget rebuild that used to throw the selection
+ * away: {@link #selected} lives here, not in the rows.
  */
 public class ServerPickScreen extends Screen {
 
-    private static final int ROW_HEIGHT = 24;
-    private static final int VISIBLE_ROWS = 6;
-
-    private final Screen parent;
-    private final Screen doneScreen; // where a successful create lands (the server list)
-    private final ServerList servers;
+    final Screen parent;
+    final Screen doneScreen; // where a successful create lands (the server list)
+    final ServerList servers;
     /** Selected saved-server addresses (the checkbox identity). */
-    private final Set<String> selected = new LinkedHashSet<>();
-    private Button next;
-    private int scroll;
+    final Set<String> selected = new LinkedHashSet<>();
     /** One-line feedback under the list; null while nothing is wrong. */
-    private Component hint;
+    Component hint;
+
+    private HeaderAndFooterLayout layout;
+    private ServerPickList list;
+    private Button next;
 
     public ServerPickScreen(Screen parent, Screen doneScreen) {
         super(Component.translatable("syncgroups.pick.title"));
@@ -47,42 +47,33 @@ public class ServerPickScreen extends Screen {
 
     @Override
     protected void init() {
-        // The list can shrink between visits; keep the window inside it.
-        scroll = Math.max(0, Math.min(scroll, Math.max(0, servers.size() - VISIBLE_ROWS)));
-        int listWidth = Math.min(300, width - 40);
-        int x0 = (width - listWidth) / 2;
-        int y0 = 40;
-        for (int i = scroll; i < servers.size() && i < scroll + VISIBLE_ROWS; i++) {
-            ServerData data = servers.get(i);
-            String address = data.ip;
-            Checkbox box = Checkbox.builder(serverLabel(data), font)
-                    .pos(x0, y0 + (i - scroll) * ROW_HEIGHT)
-                    .selected(selected.contains(address))
-                    .onValueChange((cb, checked) -> {
-                        com.craftsync.syncgroups.core.Diag.info("PICK: %s -> %s", address, checked ? "on" : "off");
-                        if (checked) {
-                            selected.add(address);
-                        } else {
-                            selected.remove(address);
-                        }
-                        hint = null;
-                    })
-                    .build();
-            addRenderableWidget(box);
+        // A rebuild (resize, return from the wizard) must not leak the old favicons.
+        if (list != null) {
+            list.closeIcons();
         }
-        next = Button.builder(Component.translatable("syncgroups.pick.next"), b -> onNext())
-                .bounds(width / 2 - 100, height - 28, 200, 20)
-                .build();
-        addRenderableWidget(next);
-        addRenderableWidget(Button.builder(Component.translatable("gui.cancel"), b -> onClose())
-                .bounds(width / 2 - 100, height - 52, 200, 20)
-                .build());
+        layout = new HeaderAndFooterLayout(this);
+        layout.addTitleHeader(title, font);
+
+        list = new ServerPickList(minecraft, this, layout.getContentHeight());
+        layout.addToContents(list);
+
+        LinearLayout footer = layout.addToFooter(LinearLayout.vertical().spacing(4));
+        footer.defaultCellSetting().alignHorizontallyCenter();
+        next = Button.builder(Component.translatable("syncgroups.pick.next"), b -> onNext()).build();
+        footer.addChild(next);
+        footer.addChild(Button.builder(Component.translatable("gui.cancel"), b -> onClose()).build());
+
+        layout.visitWidgets(w -> addRenderableWidget(w));
+        repositionElements();
+        setInitialFocus(list);
     }
 
-    private static Component serverLabel(ServerData data) {
-        // A saved entry can have no name yet (a hand-edited servers.dat): show the address.
-        String name = data.name == null || data.name.isBlank() ? data.ip : data.name;
-        return Component.literal(name + " (" + data.ip + ")");
+    @Override
+    protected void repositionElements() {
+        if (list != null) {
+            list.updateSize(width, layout);
+        }
+        layout.arrangeElements();
     }
 
     private void onNext() {
@@ -105,26 +96,21 @@ public class ServerPickScreen extends Screen {
     @Override
     public void extractRenderState(GuiGraphicsExtractor g, int mouseX, int mouseY, float partialTick) {
         super.extractRenderState(g, mouseX, mouseY, partialTick);
-        g.centeredText(font, title, width / 2, 12, 0xFFFFFF);
-        g.centeredText(font, Component.translatable("syncgroups.pick.step"), width / 2, 26, 0x909090);
+        g.centeredText(font, Component.translatable("syncgroups.pick.step"), width / 2,
+                layout.getHeaderHeight() - 3, 0x909090);
         Component line = hint != null
                 ? hint
                 : servers.size() < 2
                         ? Component.translatable("syncgroups.pick.needTwo")
                         : Component.translatable("syncgroups.pick.selected", selected.size());
-        g.centeredText(font, line, width / 2, height - 68, hint != null ? 0xFF5555 : 0x909090);
+        g.centeredText(font, line, width / 2, height - layout.getFooterHeight() - 10,
+                hint != null ? 0xFF5555 : 0x909090);
     }
 
     @Override
-    public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
-        int maxScroll = Math.max(0, servers.size() - VISIBLE_ROWS);
-        int newScroll = Math.max(0, Math.min(maxScroll, scroll - (int) Math.signum(scrollY)));
-        if (newScroll != scroll) {
-            scroll = newScroll;
-            rebuildWidgets();
-            return true;
-        }
-        return super.mouseScrolled(mouseX, mouseY, scrollX, scrollY);
+    public void removed() {
+        list.closeIcons();
+        super.removed();
     }
 
     @Override

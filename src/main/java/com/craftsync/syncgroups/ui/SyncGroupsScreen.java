@@ -28,6 +28,11 @@ public class SyncGroupsScreen extends Screen {
     /** Failure text; null while nothing is wrong. */
     private Component error;
     private Button newGroup;
+    private Button rename;
+    private Button recolor;
+    private Button remove;
+    /** id of the group acted on by the footer buttons; selected by clicking a row. */
+    private String selectedGroupId;
     /**
      * Removal (and, at two servers, the whole dissolve) copies whole folders, so it
      * runs off the render thread — materialising a Bobby/DH group is hundreds of
@@ -52,6 +57,15 @@ public class SyncGroupsScreen extends Screen {
                 rows.add(new Row(g, server));
             }
         }
+        // A removed/dissolved group must not leave the footer acting on a ghost.
+        if (rows.stream().noneMatch(r -> r.group().id.equals(selectedGroupId))) {
+            selectedGroupId = null;
+        }
+    }
+
+    /** First row of the selected group, or null when nothing is selected. */
+    private Row selectedRow() {
+        return rows.stream().filter(r -> r.group().id.equals(selectedGroupId)).findFirst().orElse(null);
     }
 
     @Override
@@ -62,16 +76,22 @@ public class SyncGroupsScreen extends Screen {
         // Removing rows while scrolled used to leave the window past the end: an
         // empty list with live buttons until the wheel moved.
         scroll = Math.max(0, Math.min(scroll, Math.max(0, rows.size() - VISIBLE_ROWS)));
-        int x0 = width / 2 - 150;
-        for (int i = scroll; i < rows.size() && i < scroll + VISIBLE_ROWS; i++) {
-            Row row = rows.get(i);
-            int y = 40 + (i - scroll) * ROW_HEIGHT;
-            Button remove = Button.builder(Component.translatable("syncgroups.manage.remove"), b -> askRemove(row))
-                    .bounds(x0 + 300 - 90, y, 90, 18)
-                    .build();
-            remove.active = !busy;
-            addRenderableWidget(remove);
-        }
+        // Rename/Recolor/Remove act on the row picked with a click; all three sit
+        // on one footer line so the rows stay readable.
+        int ax = width / 2 - 155;
+        rename = Button.builder(Component.translatable("syncgroups.manage.rename"), b -> askRename())
+                .bounds(ax, height - 76, 100, 20)
+                .build();
+        recolor = Button.builder(Component.translatable("syncgroups.manage.recolor"), b -> askRecolor())
+                .bounds(ax + 104, height - 76, 100, 20)
+                .build();
+        remove = Button.builder(Component.translatable("syncgroups.manage.remove"), b -> askRemove(selectedRow()))
+                .bounds(ax + 208, height - 76, 100, 20)
+                .build();
+        addRenderableWidget(rename);
+        addRenderableWidget(recolor);
+        addRenderableWidget(remove);
+        updateActionButtons();
         // "Done" is the screen's primary exit — keep it at the very bottom, the
         // same slot vanilla uses, with the list action stacked above it.
         newGroup = Button.builder(Component.translatable("syncgroups.manage.new"), b -> minecraft.setScreenAndShow(new ServerPickScreen(this, parent)))
@@ -86,6 +106,14 @@ public class SyncGroupsScreen extends Screen {
         done.active = !busy;
         newGroup.active = !busy;
         addRenderableWidget(done);
+    }
+
+    /** Keeps the footer actions honest with the selection and the dissolve worker. */
+    private void updateActionButtons() {
+        boolean hasRow = selectedRow() != null;
+        rename.active = hasRow && !busy;
+        recolor.active = hasRow && !busy;
+        remove.active = hasRow && !busy;
     }
 
     /**
@@ -109,6 +137,49 @@ public class SyncGroupsScreen extends Screen {
         }, Component.translatable("syncgroups.manage.confirm.title"),
                 Component.translatable("syncgroups.manage.confirm.message",
                         row.group().tag, row.serverKey())));
+    }
+
+    /**
+     * Rename / recolor act on the group of the clicked row, on a copy: if the
+     * store write fails the on-screen rows (which the next rebuild re-reads from
+     * the store) never disagree with groups.json.
+     */
+    private void askRename() {
+        Row row = selectedRow();
+        if (row == null || busy) {
+            return;
+        }
+        minecraft.setScreenAndShow(new RenameGroupScreen(this, row.group().tag, newTag -> {
+            try {
+                Group updated = row.group().copyOf();
+                updated.tag = newTag;
+                SyncGroupsMod.store().update(updated);
+                SyncGroupsMod.toast(Component.translatable("syncgroups.toast.title"),
+                        Component.translatable("syncgroups.toast.renamed", newTag));
+            } catch (IOException e) {
+                SyncGroupsMod.LOGGER.error("Failed to rename group", e);
+                error = Component.translatable("syncgroups.manage.removeFailed", String.valueOf(e.getMessage()));
+            }
+        }));
+    }
+
+    private void askRecolor() {
+        Row row = selectedRow();
+        if (row == null || busy) {
+            return;
+        }
+        minecraft.setScreenAndShow(new RecolorGroupScreen(this, row.group()::colorInt, () -> {
+            try {
+                Group updated = row.group().copyOf();
+                updated.color = String.format("#%06X", 0xFFFFFF & row.group().colorInt());
+                SyncGroupsMod.store().update(updated);
+                SyncGroupsMod.toast(Component.translatable("syncgroups.toast.title"),
+                        Component.translatable("syncgroups.toast.recolored", updated.tag));
+            } catch (IOException e) {
+                SyncGroupsMod.LOGGER.error("Failed to recolor group", e);
+                error = Component.translatable("syncgroups.manage.removeFailed", String.valueOf(e.getMessage()));
+            }
+        }));
     }
 
     private void removeServer(Row row) {
@@ -156,8 +227,15 @@ public class SyncGroupsScreen extends Screen {
         for (int i = scroll; i < rows.size() && i < scroll + VISIBLE_ROWS; i++) {
             Row row = rows.get(i);
             int y = 40 + (i - scroll) * ROW_HEIGHT;
-            int keyWidth = x0 + 300 - 100 - (x0 + 70); // stop before the Remove button
-            g.text(font, clip(font, row.group().tag, 70 - 4), x0, y + 5, row.group().colorInt());
+            boolean selected = row.group().id.equals(selectedGroupId);
+            if (selected) {
+                g.fill(x0 - 6, y - 1, x0 + 300 - 100, y + ROW_HEIGHT - 2, 0x40FFFFFF);
+            }
+            int color = row.group().colorInt();
+            g.fill(x0, y + 3, x0 + 8, y + 15, 0xFF000000 | color);
+            g.fill(x0, y + 3, x0 + 8, y + 4, 0x66FFFFFF);
+            g.text(font, clip(font, row.group().tag, 70 - 16), x0 + 12, y + 5, color);
+            int keyWidth = x0 + 300 - 100 - (x0 + 70);
             g.text(font, clip(font, row.serverKey(), keyWidth), x0 + 70, y + 5, 0xB0B0B0);
         }
         if (rows.isEmpty()) {
@@ -171,8 +249,8 @@ public class SyncGroupsScreen extends Screen {
         }
     }
 
-    /** Fits one line into a pixel budget, with an ellipsis when cut. */
-    private static String clip(net.minecraft.client.gui.Font font, String text, int maxWidth) {
+    /** Fits one line into a pixel budget, with an ellipsis when cut. Shared by the other screens. */
+    static String clip(net.minecraft.client.gui.Font font, String text, int maxWidth) {
         if (font.width(text) <= maxWidth) {
             return text;
         }
@@ -181,6 +259,21 @@ public class SyncGroupsScreen extends Screen {
             cut = cut.substring(0, cut.length() - 1);
         }
         return cut + "…";
+    }
+
+    @Override
+    public boolean mouseClicked(net.minecraft.client.input.MouseButtonEvent event, boolean doubled) {
+        int x0 = width / 2 - 150;
+        double mx = event.x(), my = event.y();
+        for (int i = scroll; i < rows.size() && i < scroll + VISIBLE_ROWS; i++) {
+            int y = 40 + (i - scroll) * ROW_HEIGHT;
+            if (mx >= x0 && mx < x0 + 300 - 100 && my >= y - 1 && my < y + ROW_HEIGHT - 2) {
+                selectedGroupId = rows.get(i).group().id;
+                updateActionButtons();
+                return true;
+            }
+        }
+        return super.mouseClicked(event, doubled);
     }
 
     @Override
