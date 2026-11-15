@@ -91,6 +91,10 @@ caches) is shared across the group as if it were one server (full spec: the
   of a session. Commit messages: short imperative English, e.g. `core: add
   storage close waiter`. Never amend or rewrite pushed history.
 - Do not commit `build/`, `.gradle/`, `.tools/` (see .gitignore).
+- **No GitHub release without explicit user approval.** Pushing commits and
+  tags is fine; `gh release create/edit` (and any jar upload to a release)
+  waits for the user to say so for that specific version. Bumping
+  `mod_version` locally is fine — publishing is not.
 - Multiple agent sessions may work in this repo concurrently. Before editing a
   file, Read it fresh; if it already contains adaptations you did not write,
   keep them and build on top instead of overwriting.
