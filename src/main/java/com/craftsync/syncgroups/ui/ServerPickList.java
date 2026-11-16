@@ -30,7 +30,8 @@ public class ServerPickList extends ObjectSelectionList<ServerPickList.Entry> {
     public static final int ROW_HEIGHT = 36;
     private static final int BOX = 16;
     private static final int ICON = 32;
-    private static final int TEXT_X = BOX + 4 + ICON + 3;
+    /** Vanilla server-list layout: icon flush-left, text at +36. Checkbox after. */
+    private static final int TEXT_X = ICON + 3 + BOX + 6;
 
     // Same sprites vanilla Checkbox draws — widget/checkbox[_selected][_highlighted].
     private static final net.minecraft.resources.Identifier SPRITE_SELECTED =
@@ -80,7 +81,7 @@ public class ServerPickList extends ObjectSelectionList<ServerPickList.Entry> {
         return Math.min(300, this.width - 60);
     }
 
-    /** Releases our own server-icon textures; called before a rebuild and from Screen.removed(). */
+    /** Hook kept for parity with removed(); icons are shared with the vanilla list and stay. */
     public void closeIcons() {
         for (Entry e : children()) {
             e.close();
@@ -90,16 +91,19 @@ public class ServerPickList extends ObjectSelectionList<ServerPickList.Entry> {
     public class Entry extends ObjectSelectionList.Entry<ServerPickList.Entry> implements AutoCloseable {
 
         private final ServerData data;
-        /** Own texture id — NOT FaviconTexture: its forServer() key is shared with the
-         * vanilla server list, and closing ours killed vanilla's icon → purple favicons. */
-        private final net.minecraft.resources.Identifier textureId;
-        private boolean hasIcon;
+        /**
+         * Same FaviconTexture the vanilla server list uploads to (keyed by ip): by
+         * sharing it our row shows exactly what the server list shows, including
+         * icons pinged this session. Never close it — closing killed vanilla's icon
+         * (purple favicons). Lifecycle belongs to the vanilla list.
+         */
+        private final net.minecraft.client.gui.screens.FaviconTexture icon;
         private byte[] lastIconBytes;
 
         Entry(ServerData data) {
             this.data = data;
-            this.textureId = net.minecraft.resources.Identifier.withDefaultNamespace(
-                    "syncgroups/servericon/" + ServerKey.sanitize(data.ip));
+            this.icon = net.minecraft.client.gui.screens.FaviconTexture.forServer(
+                    minecraft.getTextureManager(), data.ip);
         }
 
         @Override
@@ -107,16 +111,16 @@ public class ServerPickList extends ObjectSelectionList<ServerPickList.Entry> {
             uploadIcon(); // render-thread only, and cheap while the bytes are unchanged
             int x = getContentX();
             int y = getContentY();
-            drawCheckbox(g, x, y);
-            if (hasIcon) {
-                g.blit(RenderPipelines.GUI_TEXTURED, textureId, x + BOX + 4, y + 2,
+            // Vanilla server-list geometry: icon flush-left, vertically centered.
+            if (lastIconBytes != null) {
+                g.blit(RenderPipelines.GUI_TEXTURED, icon.textureLocation(), x, y + 2,
                         0f, 0f, ICON, ICON, ICON, ICON);
             } else {
-                // vanilla's unknown-server placeholder while nothing has been uploaded
                 g.blit(RenderPipelines.GUI_TEXTURED,
                         net.minecraft.resources.Identifier.withDefaultNamespace("textures/misc/unknown_server.png"),
-                        x + BOX + 4, y + 2, 0f, 0f, ICON, ICON, ICON, ICON);
+                        x, y + 2, 0f, 0f, ICON, ICON, ICON, ICON);
             }
+            drawCheckbox(g, x + ICON + 4, y);
 
             Group group = SyncGroupsMod.store().byServer(ServerKey.normalize(data.ip)).orElse(null);
             var font = ServerPickList.this.minecraft.font;
@@ -145,7 +149,7 @@ public class ServerPickList extends ObjectSelectionList<ServerPickList.Entry> {
         }
 
         private void drawCheckbox(GuiGraphicsExtractor g, int x, int y) {
-            int bx = x + 2;
+            int bx = x;
             int by = y + (ROW_HEIGHT - BOX) / 2;
             net.minecraft.resources.Identifier sprite = screen.selected.contains(data.ip)
                     ? SPRITE_SELECTED : SPRITE_UNSELECTED;
@@ -159,19 +163,12 @@ public class ServerPickList extends ObjectSelectionList<ServerPickList.Entry> {
                 return;
             }
             lastIconBytes = bytes;
-            var tm = minecraft.getTextureManager();
             if (bytes == null) {
-                // No icon yet: unregister ours so the vanilla unknown-server placeholder
-                // path applies; the texture id stays reserved for this screen.
-                tm.release(textureId);
-                hasIcon = false;
+                icon.clear(); // fall back to the unknown-server placeholder
                 return;
             }
             try {
-                com.mojang.blaze3d.platform.NativeImage img = com.mojang.blaze3d.platform.NativeImage.read(bytes);
-                tm.register(textureId, new net.minecraft.client.renderer.texture.DynamicTexture(
-                        () -> "syncgroups-server-" + data.ip, img));
-                hasIcon = true;
+                icon.upload(com.mojang.blaze3d.platform.NativeImage.read(bytes));
             } catch (Exception e) {
                 SyncGroupsMod.LOGGER.warn("Invalid icon for server {}", data.ip, e);
             }
@@ -179,8 +176,8 @@ public class ServerPickList extends ObjectSelectionList<ServerPickList.Entry> {
 
         @Override
         public void close() {
-            minecraft.getTextureManager().release(textureId);
-            hasIcon = false;
+            // Intentionally not closing the shared FaviconTexture: the vanilla list
+            // still renders it. Small, bounded reuse across rows of the same server.
         }
 
         @Override

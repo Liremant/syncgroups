@@ -101,7 +101,9 @@ public class ConfigScreen extends Screen {
         y += gap;
 
         addRenderableWidget(Button.builder(Component.translatable("syncgroups.config.manage"), b ->
-                        minecraft.setScreenAndShow(new SyncGroupsScreen(this, this)))
+                        minecraft.setScreenAndShow(SyncGroupsMod.store().all().isEmpty()
+                                ? new ServerPickScreen(this, this, this) // nothing to manage yet: go straight to creation
+                                : new SyncGroupsScreen(this, this)))
                 .tooltip(tip("syncgroups.config.manage.tip")).bounds(cx, y, w, h).build());
 
         addRenderableWidget(Button.builder(Component.translatable("gui.done"), b -> onClose())
