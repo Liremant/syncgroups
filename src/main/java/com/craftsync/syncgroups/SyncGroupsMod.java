@@ -198,8 +198,15 @@ public class SyncGroupsMod implements ClientModInitializer {
             try {
                 // Publish whatever a crashed session left behind *before* converting:
                 // in symlink mode the local folder is about to be shadowed by a link,
-                // and in copy mode the group copy may be the stale one.
-                engine.recoverDirtyMarkers(g);
+                // and in copy mode the group copy may be the stale one. A failed
+                // recovery means unpublished (possibly corrupt) data is still marked —
+                // converting would publish it over the group copy. Defer instead.
+                if (!engine.recoverDirtyMarkers(g)) {
+                    Diag.error("MODE: recovery did not complete for group " + g.id
+                            + " — conversion deferred until the next launch");
+                    session.setModePending(true);
+                    return;
+                }
                 String summary = engine.convertMode(g);
                 Diag.info("MODE: group '%s' -> %s (%s)", g.tag, symlink ? "symlink" : "copy", summary);
             } catch (Exception e) {
