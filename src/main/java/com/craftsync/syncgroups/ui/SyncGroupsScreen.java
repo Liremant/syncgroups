@@ -100,10 +100,6 @@ public class SyncGroupsScreen extends Screen {
         remove = Button.builder(Component.translatable("syncgroups.manage.remove"), b -> askRemove(selectedRow()))
                 .bounds(ax + 208, height - 76, 100, 20)
                 .build();
-        addRenderableWidget(rename);
-        addRenderableWidget(recolor);
-        addRenderableWidget(remove);
-        updateActionButtons();
         // Whole-group dissolve gets its own clearly-labelled button: the destructive
         // "remove every server and copy everything out" action must not share a slot
         // with per-server removal.
@@ -111,6 +107,9 @@ public class SyncGroupsScreen extends Screen {
                 .bounds(ax, height - 100, 312, 20)
                 .build();
         addRenderableWidget(dissolve);
+        addRenderableWidget(rename);
+        addRenderableWidget(recolor);
+        addRenderableWidget(remove);
         updateActionButtons();
         // "Done" is the screen's primary exit — keep it at the very bottom, the
         // same slot vanilla uses, with the list action stacked above it.
@@ -132,6 +131,10 @@ public class SyncGroupsScreen extends Screen {
 
     /** Keeps the footer actions honest with the selection and the dissolve worker. */
     private void updateActionButtons() {
+        // Called from init() mid-build and from row selection; buttons may not exist yet.
+        if (rename == null || recolor == null || remove == null || dissolve == null) {
+            return;
+        }
         boolean hasRow = selectedRow() != null;
         rename.active = hasRow && !busy;
         recolor.active = hasRow && !busy;
