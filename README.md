@@ -109,6 +109,8 @@ Mod Menu → Sync Groups, or edit `paths.json` by hand:
 | `storageCloseTimeoutSeconds` | `30` | How long to wait for a mod to close its files on leave; a push can spend it twice, once waiting for quiet and once for closure |
 | `pushQuiescenceMs` | `1500` | How long files must stop changing before a push counts as safe |
 | `showGroupTags` | `true` | Draw the group tag next to a server in the list |
+| `showMenuButton` | `true` | Show the Sync Groups button on the multiplayer screen |
+| `hideServerAddresses` | `false` | Mask server addresses in the mod's screens (privacy on stream/screenshots) |
 
 The three timing values exist because Xaero, Bobby, Distant Horizons and Voxy
 have no "I closed my storage" event we can use. The mod watches the files
