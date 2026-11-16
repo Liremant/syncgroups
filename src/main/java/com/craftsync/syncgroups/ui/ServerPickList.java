@@ -28,10 +28,10 @@ import java.util.Objects;
 public class ServerPickList extends ObjectSelectionList<ServerPickList.Entry> {
 
     public static final int ROW_HEIGHT = 36;
-    private static final int BOX = 16;
     private static final int ICON = 32;
-    /** Vanilla server-list layout: icon flush-left, text at +36. Checkbox after. */
-    private static final int TEXT_X = ICON + 3 + BOX + 6;
+    private static final int BOX = 16;
+    /** Vanilla server-list text layout: icon flush-left, text at +36. */
+    private static final int TEXT_X = 36;
 
     // Same sprites vanilla Checkbox draws — widget/checkbox[_selected][_highlighted].
     private static final net.minecraft.resources.Identifier SPRITE_SELECTED =
@@ -111,16 +111,16 @@ public class ServerPickList extends ObjectSelectionList<ServerPickList.Entry> {
             uploadIcon(); // render-thread only, and cheap while the bytes are unchanged
             int x = getContentX();
             int y = getContentY();
-            // Vanilla server-list geometry: icon flush-left, vertically centered.
+            // Pixel-identical to the vanilla server-list row: icon at the content
+            // origin, name at +36/+1, address at +36/+12.
             if (lastIconBytes != null) {
-                g.blit(RenderPipelines.GUI_TEXTURED, icon.textureLocation(), x, y + 2,
+                g.blit(RenderPipelines.GUI_TEXTURED, icon.textureLocation(), x, y,
                         0f, 0f, ICON, ICON, ICON, ICON);
             } else {
                 g.blit(RenderPipelines.GUI_TEXTURED,
                         net.minecraft.resources.Identifier.withDefaultNamespace("textures/misc/unknown_server.png"),
-                        x, y + 2, 0f, 0f, ICON, ICON, ICON, ICON);
+                        x, y, 0f, 0f, ICON, ICON, ICON, ICON);
             }
-            drawCheckbox(g, x + ICON + 4, y);
 
             Group group = SyncGroupsMod.store().byServer(ServerKey.normalize(data.ip)).orElse(null);
             var font = ServerPickList.this.minecraft.font;
@@ -141,6 +141,8 @@ public class ServerPickList extends ObjectSelectionList<ServerPickList.Entry> {
                     ? "••••••••" : data.ip;
             g.text(font, SyncGroupsScreen.clip(font, shownIp, getContentWidth() - TEXT_X - 8),
                     textX, y + 13, 0xFF909090);
+
+            drawCheckbox(g, x, y);
         }
 
         @Override
@@ -148,8 +150,9 @@ public class ServerPickList extends ObjectSelectionList<ServerPickList.Entry> {
             return Component.translatable("narrator.select.list.position", getItemCount());
         }
 
+        /** Selection badge at the row's right edge — never shifts the row content. */
         private void drawCheckbox(GuiGraphicsExtractor g, int x, int y) {
-            int bx = x;
+            int bx = x + getContentWidth() - BOX - 2;
             int by = y + (ROW_HEIGHT - BOX) / 2;
             net.minecraft.resources.Identifier sprite = screen.selected.contains(data.ip)
                     ? SPRITE_SELECTED : SPRITE_UNSELECTED;
