@@ -209,7 +209,7 @@ public class SyncGroupsScreen extends Screen {
             }
         }, Component.translatable("syncgroups.manage.confirm.title"),
                 Component.translatable("syncgroups.manage.confirm.message",
-                        row.group().tag, row.serverKey())));
+                        row.group().tag, displayAddress(row.serverKey()))));
     }
 
     /**
@@ -383,6 +383,12 @@ public class SyncGroupsScreen extends Screen {
         } else if (error != null) {
             g.centeredText(font, error, width / 2, height - 106, 0xFF5555);
         }
+    }
+
+    /** Address as shown to the user — masked when hideServerAddresses is on. */
+    static String displayAddress(String serverKey) {
+        return SyncGroupsMod.config() != null && SyncGroupsMod.config().hideServerAddresses
+                ? "••••••••" : serverKey;
     }
 
     /** Fits one line into a pixel budget, with an ellipsis when cut. Shared by the other screens. */
