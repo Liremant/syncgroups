@@ -34,8 +34,28 @@ public class SyncGroupsScreen extends Screen {
     private Button recolor;
     private Button remove;
     private Button dissolve;
-    /** id of the group acted on by the footer buttons; selected by clicking a row. */
     private String selectedGroupId;
+    /** Server key picked by a single click; null when the whole group (or nothing) is selected. */
+    private String selectedServerKey;
+    private Selection selection = Selection.NONE;
+
+    private void selectServer(Row row) {
+        selectedGroupId = row.group().id;
+        selectedServerKey = row.serverKey();
+        selection = Selection.SERVER;
+    }
+
+    private void selectGroup(Row row) {
+        selectedGroupId = row.group().id;
+        selectedServerKey = null;
+        selection = Selection.GROUP;
+    }
+
+    private void clearSelection() {
+        selectedGroupId = null;
+        selectedServerKey = null;
+        selection = Selection.NONE;
+    }
     /**
      * Removal (and, at two servers, the whole dissolve) copies whole folders, so it
      * runs off the render thread — materialising a Bobby/DH group is hundreds of
@@ -47,6 +67,13 @@ public class SyncGroupsScreen extends Screen {
 
     private record Row(Group group, String serverKey) {
     }
+
+    /**
+     * Selection model: single click picks one row (Remove targets that server);
+     * double click on a row picks its whole group (Rename/Recolor/Dissolve target
+     * the group, and Remove on a group-selected row is disabled in favour of Dissolve).
+     */
+    private enum Selection { NONE, SERVER, GROUP }
 
     public SyncGroupsScreen(Screen parent) {
         this(parent, null);
@@ -66,15 +93,29 @@ public class SyncGroupsScreen extends Screen {
                 rows.add(new Row(g, server));
             }
         }
-        // A removed/dissolved group must not leave the footer acting on a ghost.
-        if (rows.stream().noneMatch(r -> r.group().id.equals(selectedGroupId))) {
-            selectedGroupId = null;
+        // A removed/dissolved group or server must not leave the footer acting on a ghost.
+        if (selectedGroupId != null) {
+            boolean groupAlive = rows.stream().anyMatch(r -> r.group().id.equals(selectedGroupId));
+            boolean serverAlive = selectedServerKey != null && rows.stream()
+                    .anyMatch(r -> r.group().id.equals(selectedGroupId) && r.serverKey().equals(selectedServerKey));
+            if (!groupAlive || (selection == Selection.SERVER && !serverAlive)) {
+                clearSelection();
+            }
         }
     }
 
     /** First row of the selected group, or null when nothing is selected. */
     private Row selectedRow() {
         return rows.stream().filter(r -> r.group().id.equals(selectedGroupId)).findFirst().orElse(null);
+    }
+
+    /** The exact (group, server) row picked by a single click, or null. */
+    private Row selectedServerRow() {
+        if (selection != Selection.SERVER || selectedServerKey == null) {
+            return null;
+        }
+        return rows.stream().filter(r -> r.group().id.equals(selectedGroupId)
+                && r.serverKey().equals(selectedServerKey)).findFirst().orElse(null);
     }
 
     @Override
@@ -97,7 +138,7 @@ public class SyncGroupsScreen extends Screen {
         recolor = Button.builder(Component.translatable("syncgroups.manage.recolor"), b -> askRecolor())
                 .bounds(ax + 104, height - 76, 100, 20)
                 .build();
-        remove = Button.builder(Component.translatable("syncgroups.manage.remove"), b -> askRemove(selectedRow()))
+        remove = Button.builder(Component.translatable("syncgroups.manage.remove"), b -> askRemove())
                 .bounds(ax + 208, height - 76, 100, 20)
                 .build();
         // Whole-group dissolve gets its own clearly-labelled button: the destructive
@@ -135,11 +176,13 @@ public class SyncGroupsScreen extends Screen {
         if (rename == null || recolor == null || remove == null || dissolve == null) {
             return;
         }
-        boolean hasRow = selectedRow() != null;
-        rename.active = hasRow && !busy;
-        recolor.active = hasRow && !busy;
-        remove.active = hasRow && !busy;
-        dissolve.active = hasRow && !busy;
+        boolean hasServer = selection == Selection.SERVER && selectedServerRow() != null;
+        boolean hasGroup = selection == Selection.GROUP && selectedRow() != null;
+        boolean hasAny = hasServer || hasGroup;
+        rename.active = hasGroup && !busy;      // group-level: renames the tag
+        recolor.active = hasGroup && !busy;     // group-level: recolors the tag
+        remove.active = hasServer && !busy;     // server-level: removes this server
+        dissolve.active = hasGroup && !busy;    // group-level: dissolves everything
     }
 
     /**
@@ -147,8 +190,10 @@ public class SyncGroupsScreen extends Screen {
      * is replaced by a real copy of the shared folder before the group moves to
      * _dissolved. That is the one destructive, slow step, so it asks first.
      */
-    private void askRemove(Row row) {
-        if (busy) {
+    /** Removes the single selected server (dialog when this dissolves a 2-server group). */
+    private void askRemove() {
+        Row row = selectedServerRow();
+        if (row == null || busy) {
             return;
         }
         if (row.group().servers.size() > 2) {
@@ -178,7 +223,7 @@ public class SyncGroupsScreen extends Screen {
      * irreversible, so it asks first and runs off-thread.
      */
     private void askDissolve() {
-        Row row = selectedRow();
+        Row row = selection == Selection.GROUP ? selectedRow() : selectedServerRow();
         if (row == null || busy) {
             return;
         }
@@ -220,7 +265,7 @@ public class SyncGroupsScreen extends Screen {
     }
 
     private void askRename() {
-        Row row = selectedRow();
+        Row row = selection == Selection.GROUP ? selectedRow() : selectedServerRow();
         if (row == null || busy) {
             return;
         }
@@ -239,7 +284,7 @@ public class SyncGroupsScreen extends Screen {
     }
 
     private void askRecolor() {
-        Row row = selectedRow();
+        Row row = selection == Selection.GROUP ? selectedRow() : selectedServerRow();
         if (row == null || busy) {
             return;
         }
@@ -302,9 +347,13 @@ public class SyncGroupsScreen extends Screen {
         for (int i = scroll; i < rows.size() && i < scroll + VISIBLE_ROWS; i++) {
             Row row = rows.get(i);
             int y = 40 + (i - scroll) * ROW_HEIGHT;
-            boolean selected = row.group().id.equals(selectedGroupId);
-            if (selected) {
-                g.fill(x0 - 6, y - 1, x0 + 300 - 100, y + ROW_HEIGHT - 2, 0x40FFFFFF);
+            boolean rowSelected = selection == Selection.SERVER
+                    && row.group().id.equals(selectedGroupId) && row.serverKey().equals(selectedServerKey);
+            boolean groupSelected = selection == Selection.GROUP && row.group().id.equals(selectedGroupId);
+            if (rowSelected) {
+                g.fill(x0 - 6, y - 1, x0 + 300 - 100, y + ROW_HEIGHT - 2, 0x60FFFFFF);
+            } else if (groupSelected) {
+                g.fill(x0 - 6, y - 1, x0 + 300 - 100, y + ROW_HEIGHT - 2, 0x30FFFFFF);
             }
             int color = row.group().colorInt();
             g.fill(x0, y + 3, x0 + 8, y + 15, 0xFF000000 | color);
@@ -341,18 +390,32 @@ public class SyncGroupsScreen extends Screen {
         return cut + "…";
     }
 
+    private long lastRowClickAt;
+    private Row lastRowClickRow;
+
     @Override
     public boolean mouseClicked(net.minecraft.client.input.MouseButtonEvent event, boolean doubled) {
         int x0 = width / 2 - 150;
         double mx = event.x(), my = event.y();
         for (int i = scroll; i < rows.size() && i < scroll + VISIBLE_ROWS; i++) {
+            Row row = rows.get(i);
             int y = 40 + (i - scroll) * ROW_HEIGHT;
             if (mx >= x0 && mx < x0 + 300 - 100 && my >= y - 1 && my < y + ROW_HEIGHT - 2) {
-                selectedGroupId = rows.get(i).group().id;
+                long now = System.currentTimeMillis();
+                boolean isDoubleClick = lastRowClickRow == row && now - lastRowClickAt < 400;
+                lastRowClickRow = row;
+                lastRowClickAt = now;
+                if (isDoubleClick) {
+                    selectGroup(row);
+                } else {
+                    selectServer(row);
+                }
                 updateActionButtons();
                 return true;
             }
         }
+        clearSelection();
+        updateActionButtons();
         return super.mouseClicked(event, doubled);
     }
 
