@@ -65,7 +65,7 @@ public class ServerPickScreen extends Screen {
         next = Button.builder(Component.translatable("syncgroups.pick.next"), b -> onNext())
                 .bounds(width / 2 - 100, height - FOOTER + 4, 200, 20)
                 .build();
-        next.active = !selected.isEmpty();
+        next.active = selected.size() >= 2;
         addRenderableWidget(next);
         addRenderableWidget(Button.builder(backScreen != null
                         ? Component.translatable("syncgroups.manage.back")
@@ -93,9 +93,9 @@ public class ServerPickScreen extends Screen {
         }
     }
 
-    private void refreshNext() {
+    void refreshNext() {
         if (next != null) {
-            next.active = !selected.isEmpty();
+            next.active = selected.size() >= 2;
         }
     }
 

@@ -61,6 +61,7 @@ public class ServerPickList extends ObjectSelectionList<ServerPickList.Entry> {
                 screen.selected.add(hit.data.ip);
             }
             screen.hint = null;
+            screen.refreshNext();
             handled = true;
         }
         return handled;
