@@ -24,10 +24,24 @@ public class Group {
      * files simply load with an empty map.
      */
     public Map<String, String> names = new LinkedHashMap<>();
+    /**
+     * Hand-editable address aliases: alias address (normalized) -> canonical
+     * server key. Joining an aliased address syncs against the canonical
+     * server's storage, so pack makers can pre-wire alt IPs without the player
+     * adding anything. Additive field: older groups.json loads with an empty map.
+     */
+    public Map<String, String> aliases = new LinkedHashMap<>();
     public long createdAt;
 
     public boolean contains(String serverKey) {
         return servers.contains(serverKey);
+    }
+
+    /** The canonical server key this alias resolves to, or null when not an alias. */
+    public String canonicalOf(String aliasKey) {
+        String canonical = aliases.get(aliasKey);
+        // The alias must map to a server actually in the group.
+        return canonical != null && servers.contains(canonical) ? canonical : null;
     }
 
     /** Remembered server-list name for a key, or null when never seen. */
@@ -64,6 +78,7 @@ public class Group {
         c.color = color;
         c.servers = new ArrayList<>(servers);
         c.names = new LinkedHashMap<>(names);
+        c.aliases = new LinkedHashMap<>(aliases);
         c.createdAt = createdAt;
         return c;
     }

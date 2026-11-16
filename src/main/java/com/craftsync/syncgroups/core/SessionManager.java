@@ -78,6 +78,14 @@ public final class SessionManager {
             return false;
         }
         String key = ServerKey.normalize(address);
+        // Config-defined aliases: an aliased address shares the canonical server's
+        // storage. Everything downstream (pull/push/markers) uses the canonical key.
+        Group aliasGroup = store.byServer(key).orElse(null);
+        String effectiveKey = aliasGroup != null ? aliasGroup.canonicalOf(key) : null;
+        if (effectiveKey != null) {
+            Diag.info("JOIN: '%s' is an alias of '%s' — syncing against the canonical storage", key, effectiveKey);
+            key = effectiveKey;
+        }
         Group group;
         synchronized (this) {
             List<Group> all = store.all();

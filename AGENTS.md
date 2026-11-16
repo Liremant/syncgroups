@@ -68,6 +68,12 @@ caches) is shared across the group as if it were one server (full spec: the
   Distant Horizons) and by crash recovery for servers that are not the current
   session; a name-keyed root with no remembered name is skipped with a warning
   instead of guessing a path.
+- `Group.aliases` (groups.json, hand-editable) maps alias addresses (normalized)
+  to a canonical server key of the same group: joining an aliased address syncs
+  against the canonical server's storage, so pack makers can pre-wire alt IPs.
+  Aliases to keys not in the group are ignored; `SessionManager.onLogin`
+  resolves the alias before anything else, and everything downstream uses the
+  canonical key.
 - `DirOps` is symlink-aware and this matters: `deleteTree` must never follow a
   link into its target, `replaceWithRelativeSymlink` stashes the existing folder
   and restores it when link creation fails (Windows needs Developer Mode or admin

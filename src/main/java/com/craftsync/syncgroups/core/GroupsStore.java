@@ -52,6 +52,9 @@ public final class GroupsStore {
                 if (g.names == null) {
                     g.names = new java.util.LinkedHashMap<>();
                 }
+                if (g.aliases == null) {
+                    g.aliases = new java.util.LinkedHashMap<>();
+                }
                 if (g.color == null || !g.color.matches("#[0-9a-fA-F]{6}")) {
                     g.color = "#55FFAA";
                 }
@@ -76,7 +79,12 @@ public final class GroupsStore {
     }
 
     public synchronized Optional<Group> byServer(String serverKey) {
-        return root.groups.stream().filter(g -> g.contains(serverKey)).findFirst();
+        Optional<Group> direct = root.groups.stream().filter(g -> g.contains(serverKey)).findFirst();
+        if (direct.isPresent()) {
+            return direct;
+        }
+        // Config-defined aliases: an aliased address shares the canonical server's storage.
+        return root.groups.stream().filter(g -> g.canonicalOf(serverKey) != null).findFirst();
     }
 
     public synchronized Optional<Group> byId(String id) {
