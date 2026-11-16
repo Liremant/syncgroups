@@ -2,6 +2,7 @@ package com.craftsync.syncgroups.ui;
 
 import com.craftsync.syncgroups.SyncGroupsMod;
 import com.craftsync.syncgroups.core.Group;
+import com.craftsync.syncgroups.core.ServerKey;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.Button;
@@ -9,9 +10,14 @@ import net.minecraft.client.gui.screens.ConfirmScreen;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 
+import net.minecraft.client.multiplayer.ServerData;
+import net.minecraft.client.multiplayer.ServerList;
+
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Spec §5.1/§6 management: list existing groups, remove a server from a group
@@ -86,7 +92,20 @@ public class SyncGroupsScreen extends Screen {
         this.backScreen = backScreen;
     }
 
+    /** Fresh display names from the saved-server list, keyed by normalized address. */
+    private final Map<String, String> freshNames = new LinkedHashMap<>();
+
     private void rebuildRows() {
+        freshNames.clear();
+        ServerList list = new ServerList(minecraft);
+        list.load();
+        for (int i = 0; i < list.size(); i++) {
+            ServerData data = list.get(i);
+            if (data.ip != null && !data.ip.isBlank()) {
+                freshNames.putIfAbsent(ServerKey.normalize(data.ip),
+                        data.name == null || data.name.isBlank() ? data.ip : data.name);
+            }
+        }
         rows.clear();
         for (Group g : SyncGroupsMod.store().all()) {
             for (String server : g.servers) {
@@ -361,7 +380,8 @@ public class SyncGroupsScreen extends Screen {
             g.text(font, clip(font, row.group().tag, 70 - 16), x0 + 12, y + 5, 0xFF000000 | color);
             // Line 1: the name the user gave the server (from the server-list entry);
             // fall back to the address when no name is known. Line 2: the address.
-            String serverName = row.group().nameOf(row.serverKey());
+            String serverName = freshNames.getOrDefault(row.serverKey(),
+                    row.group().nameOf(row.serverKey()));
             if (serverName == null || serverName.isBlank()) {
                 serverName = row.serverKey();
             }
