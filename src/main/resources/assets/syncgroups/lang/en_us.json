@@ -59,5 +59,10 @@
   "syncgroups.config.menubutton.tip": "Show the Sync Groups button on the multiplayer screen. Turn it off to play with menus untouched — groups keep syncing.",
   "syncgroups.toast.dissolved": "Dissolve group '%s'",
   "syncgroups.manage.dissolve": "Dissolve group",
-  "syncgroups.manage.confirm.dissolve.message": "Removing any server leaves '%s' with one server, so the group is dissolved. Every server gets its own copy of the shared data — this can take a while."
+  "syncgroups.manage.confirm.dissolve.message": "Removing any server leaves '%s' with one server, so the group is dissolved. Every server gets its own copy of the shared data — this can take a while.",
+  "syncgroups.manage.back": "Back",
+  "syncgroups.config.hideips": "Server addresses: %s",
+  "syncgroups.config.hideips.tip": "Mask server addresses in the mod's screens (privacy on stream or screenshots). Groups keep working — only the display changes.",
+  "syncgroups.config.hideips.shown": "visible",
+  "syncgroups.config.hideips.hidden": "masked"
 }

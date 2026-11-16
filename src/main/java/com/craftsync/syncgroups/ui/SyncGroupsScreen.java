@@ -23,6 +23,8 @@ public class SyncGroupsScreen extends Screen {
     private static final int VISIBLE_ROWS = 6;
 
     private final Screen parent;
+    /** The mod menu screen, when this screen was opened from it. */
+    private Screen backScreen;
     private final List<Row> rows = new ArrayList<>();
     private int scroll;
     /** Failure text; null while nothing is wrong. */
@@ -47,8 +49,14 @@ public class SyncGroupsScreen extends Screen {
     }
 
     public SyncGroupsScreen(Screen parent) {
+        this(parent, null);
+    }
+
+    /** backScreen — where the explicit "Back" button goes (the mod menu), or null for none. */
+    public SyncGroupsScreen(Screen parent, Screen backScreen) {
         super(Component.translatable("syncgroups.manage.title"));
         this.parent = parent;
+        this.backScreen = backScreen;
     }
 
     private void rebuildRows() {
@@ -106,11 +114,13 @@ public class SyncGroupsScreen extends Screen {
         updateActionButtons();
         // "Done" is the screen's primary exit — keep it at the very bottom, the
         // same slot vanilla uses, with the list action stacked above it.
-        newGroup = Button.builder(Component.translatable("syncgroups.manage.new"), b -> minecraft.setScreenAndShow(new ServerPickScreen(this, parent)))
+        newGroup = Button.builder(Component.translatable("syncgroups.manage.new"), b -> minecraft.setScreenAndShow(new ServerPickScreen(this, parent, backScreen)))
                 .bounds(width / 2 - 100, height - 52, 200, 20)
                 .build();
         addRenderableWidget(newGroup);
-        Button done = Button.builder(Component.translatable("gui.done"), b -> onClose())
+        Button done = Button.builder(backScreen != null
+                        ? Component.translatable("syncgroups.manage.back")
+                        : Component.translatable("gui.done"), b -> onClose())
                 .bounds(width / 2 - 100, height - 28, 200, 20)
                 .build();
         // A dissolve copies whole folders in the background; every action that could
@@ -142,6 +152,8 @@ public class SyncGroupsScreen extends Screen {
             removeServer(row); // store.update only — no data is copied
             return;
         }
+        // Two-server group: removing either server dissolves the whole group. That
+        // is inherent to the "one server left = dissolve" rule; the dialog says so.
         minecraft.setScreenAndShow(new ConfirmScreen(confirmed -> {
             minecraft.setScreenAndShow(this);
             if (confirmed) {
@@ -296,7 +308,9 @@ public class SyncGroupsScreen extends Screen {
             g.fill(x0, y + 3, x0 + 8, y + 4, 0x66FFFFFF);
             g.text(font, clip(font, row.group().tag, 70 - 16), x0 + 12, y + 5, 0xFF000000 | color);
             int keyWidth = x0 + 300 - 100 - (x0 + 70);
-            g.text(font, clip(font, row.serverKey(), keyWidth), x0 + 70, y + 5, 0xFFB0B0B0);
+            String key = SyncGroupsMod.config() != null && SyncGroupsMod.config().hideServerAddresses
+                    ? "••••••••" : row.serverKey();
+            g.text(font, clip(font, key, keyWidth), x0 + 70, y + 5, 0xFFB0B0B0);
         }
         if (rows.isEmpty()) {
             g.centeredText(font, Component.translatable("syncgroups.manage.empty"), width / 2, 60, 0x909090);
@@ -359,6 +373,7 @@ public class SyncGroupsScreen extends Screen {
 
     @Override
     public void onClose() {
-        minecraft.setScreenAndShow(parent);
+        // Back goes to the mod menu when we came from there; the wizard parent chain otherwise.
+        minecraft.setScreenAndShow(backScreen != null ? backScreen : parent);
     }
 }

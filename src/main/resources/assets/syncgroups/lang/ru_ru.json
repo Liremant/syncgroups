@@ -59,5 +59,10 @@
   "syncgroups.config.menubutton.tip": "Показывать кнопку Sync Groups на экране мультиплеера. Выключите, чтобы не менять меню — группы продолжат работать.",
   "syncgroups.toast.dissolved": "Распустить группу «%s»",
   "syncgroups.manage.dissolve": "Распустить",
-  "syncgroups.manage.confirm.dissolve.message": "После удаления любого сервера в «%s» останется один, поэтому группа распускается. Каждому серверу будет сделана своя копия общих данных — это может занять время."
+  "syncgroups.manage.confirm.dissolve.message": "После удаления любого сервера в «%s» останется один, поэтому группа распускается. Каждому серверу будет сделана своя копия общих данных — это может занять время.",
+  "syncgroups.manage.back": "Назад",
+  "syncgroups.config.hideips": "Адреса серверов: %s",
+  "syncgroups.config.hideips.tip": "Скрывать адреса серверов в экранах мода (приватность на стриме или скриншотах). Группы работают как обычно — меняется только отображение.",
+  "syncgroups.config.hideips.shown": "видны",
+  "syncgroups.config.hideips.hidden": "скрыты"
 }

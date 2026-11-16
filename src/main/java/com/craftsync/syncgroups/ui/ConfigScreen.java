@@ -70,6 +70,15 @@ public class ConfigScreen extends Screen {
         }).tooltip(tip("syncgroups.config.push.tip")).bounds(cx, y, w, h).build());
         y += gap + 8;
 
+        addRenderableWidget(Button.builder(ipLabel(cfg), b -> {
+            cfg.hideServerAddresses = !cfg.hideServerAddresses;
+            b.setMessage(ipLabel(cfg));
+            if (!SyncGroupsMod.saveConfig()) {
+                status = Component.translatable("syncgroups.config.saveFailed");
+            }
+        }).tooltip(tip("syncgroups.config.hideips.tip")).bounds(cx, y, w, h).build());
+        y += gap;
+
         addRenderableWidget(Button.builder(menuButtonLabel(cfg), b -> {
             cfg.showMenuButton = !cfg.showMenuButton;
             b.setMessage(menuButtonLabel(cfg));
@@ -92,7 +101,7 @@ public class ConfigScreen extends Screen {
         y += gap;
 
         addRenderableWidget(Button.builder(Component.translatable("syncgroups.config.manage"), b ->
-                        minecraft.setScreenAndShow(new SyncGroupsScreen(this)))
+                        minecraft.setScreenAndShow(new SyncGroupsScreen(this, this)))
                 .tooltip(tip("syncgroups.config.manage.tip")).bounds(cx, y, w, h).build());
 
         addRenderableWidget(Button.builder(Component.translatable("gui.done"), b -> onClose())
@@ -114,6 +123,12 @@ public class ConfigScreen extends Screen {
         return Component.translatable("syncgroups.config.mode",
                 Component.translatable(cfg.symlinkMode()
                         ? "syncgroups.config.mode.symlink" : "syncgroups.config.mode.copy"));
+    }
+
+    private static Component ipLabel(PathsConfig cfg) {
+        return Component.translatable("syncgroups.config.hideips",
+                Component.translatable(cfg.hideServerAddresses
+                        ? "syncgroups.config.hideips.hidden" : "syncgroups.config.hideips.shown"));
     }
 
     private static Component menuButtonLabel(PathsConfig cfg) {

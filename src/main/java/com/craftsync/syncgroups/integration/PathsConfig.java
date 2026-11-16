@@ -55,6 +55,8 @@ public final class PathsConfig {
     public boolean showGroupTags = true;
     /** Show the Sync Groups button on the multiplayer server list. */
     public boolean showMenuButton = true;
+    /** Mask server addresses in the mod's own screens (privacy on stream/screenshots). */
+    public boolean hideServerAddresses = false;
     /**
      * "copy" — the group folder holds copies that are pulled on join and pushed
      * on leave; local data stays real and self-contained.

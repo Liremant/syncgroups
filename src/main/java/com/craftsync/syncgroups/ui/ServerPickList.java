@@ -133,7 +133,9 @@ public class ServerPickList extends ObjectSelectionList<ServerPickList.Entry> {
                 g.fill(cx - 3, y - 1, cx + font.width(group.tag) + 3, y + 10, 0x90101010);
                 g.text(font, group.tag, cx, y, 0xFF000000 | group.colorInt());
             }
-            g.text(font, SyncGroupsScreen.clip(font, data.ip, getContentWidth() - TEXT_X - 8),
+            String shownIp = SyncGroupsMod.config() != null && SyncGroupsMod.config().hideServerAddresses
+                    ? "••••••••" : data.ip;
+            g.text(font, SyncGroupsScreen.clip(font, shownIp, getContentWidth() - TEXT_X - 8),
                     textX, y + 13, 0xFF909090);
         }
 

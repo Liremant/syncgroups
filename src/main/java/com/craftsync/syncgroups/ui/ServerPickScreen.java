@@ -26,6 +26,8 @@ public class ServerPickScreen extends Screen {
 
     final Screen parent;
     final Screen doneScreen; // where a successful create lands (the server list)
+    /** The mod menu, when opened from its button — "Back" returns there. */
+    Screen backScreen;
     final ServerList servers;
     /** Selected saved-server addresses (the checkbox identity). */
     final Set<String> selected = new LinkedHashSet<>();
@@ -40,9 +42,14 @@ public class ServerPickScreen extends Screen {
     private static final int FOOTER = 56;
 
     public ServerPickScreen(Screen parent, Screen doneScreen) {
+        this(parent, doneScreen, null);
+    }
+
+    public ServerPickScreen(Screen parent, Screen doneScreen, Screen backScreen) {
         super(Component.translatable("syncgroups.pick.title"));
         this.parent = parent;
         this.doneScreen = doneScreen;
+        this.backScreen = backScreen;
         this.servers = new ServerList(minecraft);
         this.servers.load();
     }
@@ -59,7 +66,9 @@ public class ServerPickScreen extends Screen {
                 .bounds(width / 2 - 100, height - FOOTER + 4, 200, 20)
                 .build();
         addRenderableWidget(next);
-        addRenderableWidget(Button.builder(Component.translatable("gui.cancel"), b -> onClose())
+        addRenderableWidget(Button.builder(backScreen != null
+                        ? Component.translatable("syncgroups.manage.back")
+                        : Component.translatable("gui.cancel"), b -> onClose())
                 .bounds(width / 2 - 100, height - FOOTER + 28, 200, 20)
                 .build());
 
@@ -121,6 +130,6 @@ public class ServerPickScreen extends Screen {
 
     @Override
     public void onClose() {
-        minecraft.setScreenAndShow(parent);
+        minecraft.setScreenAndShow(backScreen != null ? backScreen : parent);
     }
 }
