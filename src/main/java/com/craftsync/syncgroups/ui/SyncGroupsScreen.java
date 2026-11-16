@@ -414,9 +414,14 @@ public class SyncGroupsScreen extends Screen {
                 return true;
             }
         }
-        clearSelection();
-        updateActionButtons();
-        return super.mouseClicked(event, doubled);
+        boolean handled = super.mouseClicked(event, doubled);
+        if (!handled) {
+            // Click on empty space: drop the selection. Button clicks (which dispatched
+            // above through super) must NOT clear it — the button handler needs it.
+            clearSelection();
+            updateActionButtons();
+        }
+        return handled;
     }
 
     @Override
