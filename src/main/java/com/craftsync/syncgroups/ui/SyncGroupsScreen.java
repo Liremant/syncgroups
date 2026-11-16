@@ -293,6 +293,7 @@ public class SyncGroupsScreen extends Screen {
                 Group updated = row.group().copyOf();
                 updated.tag = newTag;
                 SyncGroupsMod.store().update(updated);
+                rebuildRows(); // rows held the stale instance; Remove would revert the rename
                 SyncGroupsMod.toast(Component.translatable("syncgroups.toast.title"),
                         Component.translatable("syncgroups.toast.renamed", newTag));
             } catch (IOException e) {
@@ -312,6 +313,7 @@ public class SyncGroupsScreen extends Screen {
                 Group updated = row.group().copyOf();
                 updated.color = String.format("#%06X", 0xFFFFFF & picked);
                 SyncGroupsMod.store().update(updated);
+                rebuildRows(); // refresh chips with the new colour
                 SyncGroupsMod.toast(Component.translatable("syncgroups.toast.title"),
                         Component.translatable("syncgroups.toast.recolored", updated.tag));
             } catch (IOException e) {

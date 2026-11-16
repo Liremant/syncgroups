@@ -109,7 +109,10 @@ public final class SessionManager {
 
         long start = System.currentTimeMillis();
         try {
-            engine.pullForJoin(group, key, serverName);
+            if (!engine.pullForJoin(group, key, serverName)) {
+                Diag.error("JOIN: pull skipped for key='" + key + "' — session not committed", new Object[0]);
+                return false;
+            }
         } catch (Exception e) {
             Diag.error("JOIN: pull FAILED for key='" + key + "' group=" + group.id, e);
             return false;

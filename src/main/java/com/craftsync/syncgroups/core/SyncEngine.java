@@ -227,16 +227,22 @@ public final class SyncEngine {
     // ------------------------------------------------------------------ join
 
     /** Spec §4.3 + §7 recovery-before-pull. Serialised with the mode conversion. */
-    public void pullForJoin(Group group, String serverKey, String serverName) throws IOException {
+    /** False when the pull was skipped (recovery incomplete) — the session must not commit. */
+    public boolean pullForJoin(Group group, String serverKey, String serverName) throws IOException {
         synchronized (fsLock) {
+            if (!recoverDirtyMarkersLocked(group)) {
+                Diag.error("PULL: recovery did not complete for group '%s' — skipping the pull to "
+                        + "avoid deleting newer local data", group.tag);
+                return false;
+            }
             pullForJoinLocked(group, serverKey, serverName);
+            return true;
         }
     }
 
     private void pullForJoinLocked(Group group, String serverKey, String serverName) throws IOException {
         Diag.info("PULL: group='%s' key='%s' name='%s' mode=%s",
                 group.tag, serverKey, serverName, config.symlinkMode() ? "symlink" : "copy");
-        recoverDirtyMarkersLocked(group);
         List<ModSyncSpec> specs = activeSpecs();
         if (specs.isEmpty()) {
             Diag.warn("PULL: no supported mods detected as installed — nothing to sync. "
@@ -481,15 +487,22 @@ public final class SyncEngine {
     // -------------------------------------------------------------- recovery
 
     /** Spec §7.2–7.4: push leftovers of a crashed session before any join pull. */
-    public void recoverDirtyMarkers(Group group) {
+    /**
+     * Spec §7.2–7.4: push leftovers of a crashed session before any join pull.
+     * Returns false when some data could not be published (push failure, suspect
+     * data that could not be moved aside, unresolvable roots) — the caller must
+     * then skip the destructive pull, or it deletes the newer local data.
+     */
+    public boolean recoverDirtyMarkers(Group group) {
         // Same lock as the pull and the conversion: the startup pass used to run
         // unguarded while a join could be deleting the very folders it walks.
         synchronized (fsLock) {
-            recoverDirtyMarkersLocked(group);
+            return recoverDirtyMarkersLocked(group);
         }
     }
 
-    private void recoverDirtyMarkersLocked(Group group) {
+    private boolean recoverDirtyMarkersLocked(Group group) {
+        boolean anyFailed = false;
         try (Stream<Path> mods = Files.list(rootDir.resolve(group.id))) {
             for (Path modDir : (Iterable<Path>) mods.filter(Files::isDirectory)::iterator) {
                 String modId = modDir.getFileName().toString();
@@ -505,13 +518,17 @@ public final class SyncEngine {
                                     marker.getFileName(), group.tag);
                             continue;
                         }
-                        handleDirtyMarker(group, modId, serverKey, marker);
+                        if (!handleDirtyMarker(group, modId, serverKey, marker)) {
+                            anyFailed = true;
+                        }
                     }
                 }
             }
         } catch (IOException e) {
             Diag.error("Recovery scan failed for group " + group.id, e);
+            anyFailed = true;
         }
+        return !anyFailed;
     }
 
     /**
@@ -532,10 +549,10 @@ public final class SyncEngine {
                 .orElse(null);
     }
 
-    private void handleDirtyMarker(Group group, String modId, String serverKey, Path marker) {
+    private boolean handleDirtyMarker(Group group, String modId, String serverKey, Path marker) {
         ModSyncSpec spec = config.mods.get(modId);
         if (spec == null) {
-            return;
+            return true;
         }
         // Marker first (written at pull time), then the name remembered in
         // groups.json — the marker is the fresher of the two when both exist.
@@ -577,7 +594,7 @@ public final class SyncEngine {
                         DirOps.moveTree(entry, backup.resolve(entry.getFileName().toString()));
                     } catch (IOException e) {
                         Diag.error("RECOVERY: could not move suspect data aside, marker kept", e);
-                        return;
+                        return false;
                     }
                     continue;
                 }
@@ -586,7 +603,7 @@ public final class SyncEngine {
                     Diag.info("RECOVERY: pushed %s for key='%s'", modId, serverKey);
                 } catch (IOException e) {
                     Diag.error("RECOVERY: push failed for " + modId + " (" + serverKey + "), marker kept", e);
-                    return;
+                    return false;
                 }
             }
         }
@@ -595,9 +612,10 @@ public final class SyncEngine {
         // file it into _backups instead of publishing it.
         if (unresolved) {
             Diag.warn("RECOVERY %s: some roots could not be resolved for key='%s' — marker kept", modId, serverKey);
-        } else {
-            quietDelete(marker);
+            return false;
         }
+        quietDelete(marker);
+        return true;
     }
 
     // -------------------------------------------------------------- mode switch
